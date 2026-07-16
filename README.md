@@ -1,6 +1,6 @@
-# Codex TOC
+# Wave TOC
 
-A fluid, Codex-inspired table of contents for Obsidian.
+A fluid, rail-style table of contents for Obsidian with smooth wave interactions.
 
 ## Highlights
 
@@ -22,7 +22,17 @@ npm run build
 Copy `manifest.json`, `main.js`, and `styles.css` into:
 
 ```text
-<Vault>/.obsidian/plugins/codex-toc/
+<Vault>/.obsidian/plugins/wave-toc/
 ```
 
-Then reload Obsidian and enable **Codex TOC** under Community plugins. Navigation behavior can be changed under **Settings → Codex TOC → 刻度导航方式**.
+Then reload Obsidian and enable **Wave TOC** under Community plugins. Navigation behavior can be changed under **Settings → Wave TOC → 刻度导航方式**.
+
+## Acknowledgements
+
+Functional research for this independent implementation included [Next TOC](https://github.com/Raven-Pensieve/obsidian-next-toc) and [Floating TOC](https://github.com/PKM-er/obsidian-floating-toc-plugin). No source code or assets from those projects are included in Wave TOC.
+
+Wave TOC is an independent project and is not affiliated with or endorsed by OpenAI.
+
+## License
+
+[MIT](LICENSE) © 2026 Hanser
