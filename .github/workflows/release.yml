@@ -19,6 +19,16 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build plugin
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
       - name: Attach Obsidian plugin files
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
