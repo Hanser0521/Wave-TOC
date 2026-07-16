@@ -1,0 +1,20 @@
+# Dependencies and generated build output
+node_modules/
+main.js
+dist/
+coverage/
+
+# Local plugin state and private environment files
+data.json
+.env
+.env.*
+!.env.example
+
+# Design and QA artifacts generated during development
+*.png
+design-qa.md
+
+# Logs, archives, and operating-system metadata
+*.log
+*.zip
+.DS_Store
