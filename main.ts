@@ -39,7 +39,7 @@ function cleanHeadingText(text: string): string {
     .trim();
 }
 
-export default class CodexTocPlugin extends Plugin {
+export default class WaveTocPlugin extends Plugin {
   settings: FloatingTocSettings = DEFAULT_SETTINGS;
   private overlays = new Map<MarkdownView, FloatingToc>();
   private refreshTimer = 0;
@@ -49,7 +49,7 @@ export default class CodexTocPlugin extends Plugin {
     this.app.workspace.detachLeavesOfType(LEGACY_VIEW_TYPE);
 
     this.addCommand({
-      id: "toggle-floating-codex-toc",
+      id: "toggle-floating-wave-toc",
       name: "Toggle floating TOC",
       callback: async () => {
         this.settings.enabled = !this.settings.enabled;
@@ -125,7 +125,7 @@ class FloatingToc {
   private suppressClick = false;
   private cleanup: Array<() => void> = [];
 
-  constructor(private plugin: CodexTocPlugin, private view: MarkdownView) {}
+  constructor(private plugin: WaveTocPlugin, private view: MarkdownView) {}
 
   refresh(): void {
     this.destroyDom();
@@ -142,22 +142,22 @@ class FloatingToc {
     if (!this.headings.length) return;
 
     const host = this.view.contentEl;
-    host.addClass("has-codex-floating-toc");
+    host.addClass("has-wave-floating-toc");
 
-    this.rootEl = host.createDiv({ cls: "codex-floating-toc" });
+    this.rootEl = host.createDiv({ cls: "wave-floating-toc" });
     this.rootEl.dataset.side = this.plugin.settings.side;
-    this.rootEl.style.setProperty("--codex-toc-height", `${this.plugin.settings.verticalSize}vh`);
-    this.railEl = this.rootEl.createDiv({ cls: "codex-floating-toc-rail" });
-    this.bubbleEl = this.rootEl.createDiv({ cls: "codex-floating-toc-bubble" });
+    this.rootEl.style.setProperty("--wave-toc-height", `${this.plugin.settings.verticalSize}vh`);
+    this.railEl = this.rootEl.createDiv({ cls: "wave-floating-toc-rail" });
+    this.bubbleEl = this.rootEl.createDiv({ cls: "wave-floating-toc-bubble" });
 
     this.headings.forEach((heading, index) => {
-      const tick = this.railEl!.createDiv({ cls: "codex-floating-toc-tick" });
+      const tick = this.railEl!.createDiv({ cls: "wave-floating-toc-tick" });
       tick.dataset.index = String(index);
       tick.dataset.level = String(heading.level);
       tick.setAttribute("aria-label", heading.text);
       this.tickEls.push(tick);
     });
-    this.railEl.style.setProperty("--codex-heading-count", String(this.headings.length));
+    this.railEl.style.setProperty("--wave-heading-count", String(this.headings.length));
     requestAnimationFrame(() => {
       if (!this.railEl) return;
       const available = Math.max(0, this.railEl.clientHeight - 8);
@@ -165,7 +165,7 @@ class FloatingToc {
       const gap = count > 1
         ? Math.min(15, Math.max(5, (available - count * 3) / (count - 1)))
         : 15;
-      this.railEl.style.setProperty("--codex-tick-gap", `${gap}px`);
+      this.railEl.style.setProperty("--wave-tick-gap", `${gap}px`);
     });
 
     const onMove = (event: MouseEvent) => this.handlePointerMove(event);
@@ -206,7 +206,7 @@ class FloatingToc {
     this.waveFrame = 0;
     this.cleanup.forEach(fn => fn());
     this.cleanup = [];
-    this.rootEl?.parentElement?.removeClass("has-codex-floating-toc");
+    this.rootEl?.parentElement?.removeClass("has-wave-floating-toc");
     this.rootEl?.remove();
     this.rootEl = null;
     this.railEl = null;
@@ -253,7 +253,7 @@ class FloatingToc {
     this.bubbleEl.addClass("is-visible");
     const railRect = this.railEl.getBoundingClientRect();
     const tickRect = tick.getBoundingClientRect();
-    this.bubbleEl.style.setProperty("--codex-bubble-y", `${tickRect.top - railRect.top + tickRect.height / 2}px`);
+    this.bubbleEl.style.setProperty("--wave-bubble-y", `${tickRect.top - railRect.top + tickRect.height / 2}px`);
     this.setWaveTarget(index);
   }
 
@@ -388,7 +388,7 @@ class FloatingToc {
 }
 
 class FloatingTocSettingTab extends PluginSettingTab {
-  constructor(app: App, private plugin: CodexTocPlugin) { super(app, plugin); }
+  constructor(app: App, private plugin: WaveTocPlugin) { super(app, plugin); }
 
   display(): void {
     const { containerEl } = this;
@@ -410,7 +410,7 @@ class FloatingTocSettingTab extends PluginSettingTab {
         }));
     new Setting(containerEl)
       .setName("Maximum heading depth")
-      .setDesc("Codex TOC is designed for H1–H3. Deeper headings are hidden by default.")
+      .setDesc("Wave TOC is designed for H1–H3. Deeper headings are hidden by default.")
       .addDropdown(dropdown => dropdown
         .addOptions({ "1": "H1", "2": "H1–H2", "3": "H1–H3" })
         .setValue(String(this.plugin.settings.maxDepth))
