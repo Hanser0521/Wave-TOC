@@ -8,6 +8,8 @@ A fluid, rail-style table of contents for Obsidian with smooth wave interactions
 - Smooth multi-tick hover wave and heading bubble
 - Current section indicated by color without changing tick length
 - Configurable navigation: follow the pointer or jump only after click
+- Configurable section tracking: follow the scrolling viewport or use the legacy cursor/click behavior
+- Localized settings with Chinese and English interfaces
 - Accurate heading navigation in Editing and Reading views
 - Automatic updates when headings change
 - Configurable side, heading depth, and rail height
@@ -25,7 +27,7 @@ Copy `manifest.json`, `main.js`, and `styles.css` into:
 <Vault>/.obsidian/plugins/wave-toc/
 ```
 
-Then reload Obsidian and enable **Wave TOC** under Community plugins. Navigation behavior can be changed under **Settings → Wave TOC → 刻度导航方式**.
+Then reload Obsidian and enable **Wave TOC** under Community plugins. Navigation and scroll-tracking behavior can be changed under **Settings → Wave TOC**. The settings interface is available in Chinese and English.
 
 ## Acknowledgements
 

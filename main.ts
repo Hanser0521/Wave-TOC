@@ -5,6 +5,7 @@ import {
   PluginSettingTab,
   Setting
 } from "obsidian";
+import { EditorView } from "@codemirror/view";
 
 const LEGACY_VIEW_TYPE = "codex-toc-view";
 
@@ -14,6 +15,8 @@ interface FloatingTocSettings {
   side: "left" | "right";
   verticalSize: number;
   navigationMode: "hover" | "click";
+  activeTrackingMode: "viewport" | "cursor";
+  uiLanguage: "zh" | "en";
 }
 
 const DEFAULT_SETTINGS: FloatingTocSettings = {
@@ -21,7 +24,9 @@ const DEFAULT_SETTINGS: FloatingTocSettings = {
   maxDepth: 3,
   side: "left",
   verticalSize: 70,
-  navigationMode: "hover"
+  navigationMode: "hover",
+  activeTrackingMode: "viewport",
+  uiLanguage: "zh"
 };
 
 interface TocHeading {
@@ -176,20 +181,21 @@ class FloatingToc {
     const onLeave = () => this.clearHover();
     const onClick = (event: MouseEvent) => this.handleClick(event);
     const onScroll = () => this.scheduleActiveUpdate();
-    const scrollRoot = host.querySelector<HTMLElement>(".cm-scroller, .markdown-preview-view") ?? host;
 
     this.rootEl.addEventListener("mousemove", onMove);
     this.rootEl.addEventListener("mousedown", onDown);
     this.rootEl.addEventListener("mouseleave", onLeave);
     this.rootEl.addEventListener("click", onClick);
-    scrollRoot.addEventListener("scroll", onScroll, { passive: true });
+    host.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    host.addEventListener("wheel", onScroll, { passive: true });
     document.addEventListener("selectionchange", onScroll, { passive: true });
     this.cleanup.push(
       () => this.rootEl?.removeEventListener("mousemove", onMove),
       () => this.rootEl?.removeEventListener("mousedown", onDown),
       () => this.rootEl?.removeEventListener("mouseleave", onLeave),
       () => this.rootEl?.removeEventListener("click", onClick),
-      () => scrollRoot.removeEventListener("scroll", onScroll),
+      () => host.removeEventListener("scroll", onScroll, { capture: true }),
+      () => host.removeEventListener("wheel", onScroll),
       () => document.removeEventListener("selectionchange", onScroll)
     );
     requestAnimationFrame(() => this.updateActive());
@@ -365,18 +371,39 @@ class FloatingToc {
     if (!this.headings.length) return;
     const rendered = this.getRenderedHeadings();
     let index = 0;
-    if (rendered.length) {
+    if (this.view.getMode() === "preview" && rendered.length) {
       const anchor = this.view.containerEl.getBoundingClientRect().top + 100;
       rendered.forEach((element, elementIndex) => {
         if (element.getBoundingClientRect().top <= anchor) index = elementIndex;
       });
     } else {
-      const line = this.view.editor.getCursor("from").line;
+      const line = this.plugin.settings.activeTrackingMode === "viewport"
+        ? this.getEditorViewportLine()
+        : this.view.editor.getCursor("from").line;
       this.headings.forEach((heading, headingIndex) => {
         if (heading.line <= line) index = headingIndex;
       });
     }
     this.setActive(Math.min(index, this.headings.length - 1));
+  }
+
+  private getEditorViewportLine(): number {
+    const editorView = EditorView.findFromDOM(this.view.contentEl);
+    if (editorView) {
+      const scrollerRect = editorView.scrollDOM.getBoundingClientRect();
+      const contentRect = editorView.contentDOM.getBoundingClientRect();
+      const anchorY = Math.min(scrollerRect.bottom - 1, scrollerRect.top + 100);
+      const anchorX = Math.min(contentRect.right - 1, contentRect.left + 24);
+      const position = editorView.posAtCoords({ x: anchorX, y: anchorY }, false);
+      if (position !== null) return editorView.state.doc.lineAt(position).number - 1;
+    }
+
+    const scroller = this.view.contentEl.querySelector<HTMLElement>(".cm-scroller");
+    if (scroller && scroller.scrollHeight > scroller.clientHeight) {
+      const progress = scroller.scrollTop / (scroller.scrollHeight - scroller.clientHeight);
+      return Math.round(progress * Math.max(0, this.view.editor.lineCount() - 1));
+    }
+    return this.view.editor.getCursor("from").line;
   }
 
   private setActive(index: number): void {
@@ -393,24 +420,76 @@ class FloatingTocSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    const isChinese = this.plugin.settings.uiLanguage === "zh";
+    const text = isChinese ? {
+      languageName: "界面语言",
+      languageDesc: "选择 Wave TOC 设置菜单使用的语言。",
+      enabledName: "启用浮动目录",
+      positionName: "显示位置",
+      left: "左侧",
+      right: "右侧",
+      depthName: "最大标题层级",
+      depthDesc: "Wave TOC 针对一级至三级标题设计，默认显示到三级标题。",
+      navigationName: "刻度导航方式",
+      navigationDesc: "选择鼠标滑过刻度时正文立即跟随，或仅在点击刻度后定位。",
+      navigationHover: "悬停时正文跟随",
+      navigationClick: "点击后正文定位",
+      trackingName: "正文滚动同步方式",
+      trackingDesc: "选择滚动正文时刻度自动跟随，或保留点击正文后才更新刻度的旧版方式。",
+      trackingViewport: "正文滚动时自动跟随（默认）",
+      trackingCursor: "光标点击后跟随",
+      heightName: "刻度轨道高度",
+      heightDesc: "设置刻度轨道占窗口高度的百分比。"
+    } : {
+      languageName: "Interface language",
+      languageDesc: "Choose the language used in the Wave TOC settings.",
+      enabledName: "Enable floating TOC",
+      positionName: "Position",
+      left: "Left edge",
+      right: "Right edge",
+      depthName: "Maximum heading depth",
+      depthDesc: "Wave TOC is designed for H1–H3 and shows headings through H3 by default.",
+      navigationName: "Tick navigation",
+      navigationDesc: "Choose whether the note follows tick hover or moves only after a click.",
+      navigationHover: "Follow on hover",
+      navigationClick: "Navigate on click",
+      trackingName: "Content scroll tracking",
+      trackingDesc: "Choose automatic viewport tracking while scrolling or the legacy cursor/click behavior.",
+      trackingViewport: "Follow while scrolling (default)",
+      trackingCursor: "Follow after cursor click",
+      heightName: "Rail height",
+      heightDesc: "Set the rail height as a percentage of the window."
+    };
+
     new Setting(containerEl)
-      .setName("Enable floating TOC")
+      .setName(text.languageName)
+      .setDesc(text.languageDesc)
+      .addDropdown(dropdown => dropdown
+        .addOptions({ zh: "中文", en: "English" })
+        .setValue(this.plugin.settings.uiLanguage)
+        .onChange(async value => {
+          this.plugin.settings.uiLanguage = value as "zh" | "en";
+          await this.plugin.saveSettings();
+          this.display();
+        }));
+    new Setting(containerEl)
+      .setName(text.enabledName)
       .addToggle(toggle => toggle.setValue(this.plugin.settings.enabled).onChange(async value => {
         this.plugin.settings.enabled = value;
         await this.plugin.saveSettings();
       }));
     new Setting(containerEl)
-      .setName("Position")
+      .setName(text.positionName)
       .addDropdown(dropdown => dropdown
-        .addOptions({ left: "Left edge", right: "Right edge" })
+        .addOptions({ left: text.left, right: text.right })
         .setValue(this.plugin.settings.side)
         .onChange(async value => {
           this.plugin.settings.side = value as "left" | "right";
           await this.plugin.saveSettings();
         }));
     new Setting(containerEl)
-      .setName("Maximum heading depth")
-      .setDesc("Wave TOC is designed for H1–H3. Deeper headings are hidden by default.")
+      .setName(text.depthName)
+      .setDesc(text.depthDesc)
       .addDropdown(dropdown => dropdown
         .addOptions({ "1": "H1", "2": "H1–H2", "3": "H1–H3" })
         .setValue(String(this.plugin.settings.maxDepth))
@@ -419,12 +498,12 @@ class FloatingTocSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
     new Setting(containerEl)
-      .setName("刻度导航方式")
-      .setDesc("选择鼠标滑过刻度时正文立即跟随，或仅在点击刻度后定位。")
+      .setName(text.navigationName)
+      .setDesc(text.navigationDesc)
       .addDropdown(dropdown => dropdown
         .addOptions({
-          hover: "悬停时正文跟随",
-          click: "点击后正文定位"
+          hover: text.navigationHover,
+          click: text.navigationClick
         })
         .setValue(this.plugin.settings.navigationMode)
         .onChange(async value => {
@@ -432,8 +511,21 @@ class FloatingTocSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
     new Setting(containerEl)
-      .setName("Rail height")
-      .setDesc("Percentage of the window height.")
+      .setName(text.trackingName)
+      .setDesc(text.trackingDesc)
+      .addDropdown(dropdown => dropdown
+        .addOptions({
+          viewport: text.trackingViewport,
+          cursor: text.trackingCursor
+        })
+        .setValue(this.plugin.settings.activeTrackingMode)
+        .onChange(async value => {
+          this.plugin.settings.activeTrackingMode = value as "viewport" | "cursor";
+          await this.plugin.saveSettings();
+        }));
+    new Setting(containerEl)
+      .setName(text.heightName)
+      .setDesc(text.heightDesc)
       .addSlider(slider => slider
         .setLimits(35, 85, 5)
         .setDynamicTooltip()
