@@ -1,6 +1,12 @@
 # Wave TOC
 
-A fluid, rail-style table of contents for Obsidian with smooth wave interactions.
+[English](https://github.com/Hanser0521/Wave-TOC/blob/main/README.md) | [简体中文](https://github.com/Hanser0521/Wave-TOC/blob/main/README.zh-CN.md)
+
+Wave TOC turns the active note's outline into a compact floating navigation rail beside the document. Move across the ticks to preview headings and nearby content, follow the current section while scrolling, or jump directly to any heading—without giving up sidebar space.
+
+Designed for long notes, it stays accurate in both Editing and Reading views and keeps the interaction calm: scrolling changes only the active color, while the smooth wave animation appears on hover.
+
+![Wave TOC in action](https://raw.githubusercontent.com/Hanser0521/Wave-TOC/main/assets/wave-toc-demo.gif)
 
 ## Highlights
 
