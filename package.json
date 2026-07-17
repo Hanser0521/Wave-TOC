@@ -1,10 +1,13 @@
 {
   "name": "wave-toc",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production"
+  },
+  "dependencies": {
+    "@codemirror/view": "^6.38.6"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
