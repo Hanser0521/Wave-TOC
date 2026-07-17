@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.3 — 2026-07-17
+
+### 中文
+
+- 修复插件市场审核阻断项：清理清单描述中的冗余产品名称。
+- 按审核建议改善弹出窗口兼容性、命令标识、依赖声明、正则表达式和样式规则。
+- 为 GitHub Release 构建产物增加来源证明，方便校验发布文件来自本仓库工作流。
+- 保留 1.0.2 的悬停强调修复：编辑模式下仅当前最长刻度加深。
+
+### English
+
+- Fixed the marketplace review blocker by removing the redundant product name from the manifest description.
+- Improved popout compatibility, command naming, dependency declarations, regular expressions, and CSS rules following review feedback.
+- Added build provenance attestations for GitHub Release assets.
+- Preserved the 1.0.2 hover emphasis fix so only the centered longest tick is darkened in Editing view.
+
 ## 1.0.2 — 2026-07-17
 
 ### 中文
