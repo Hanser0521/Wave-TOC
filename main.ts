@@ -8,6 +8,7 @@ import {
 import { EditorView } from "@codemirror/view";
 
 const LEGACY_VIEW_TYPE = "codex-toc-view";
+const PLUGIN_DISPLAY_NAME = "Wave TOC";
 
 interface FloatingTocSettings {
   enabled: boolean;
@@ -135,7 +136,7 @@ export default class WaveTocPlugin extends Plugin {
 
     this.addCommand({
       id: "toggle-floating-toc",
-      name: "Toggle floating TOC",
+      name: `Toggle ${PLUGIN_DISPLAY_NAME}`,
       callback: async () => {
         this.settings.enabled = !this.settings.enabled;
         await this.saveSettings();
