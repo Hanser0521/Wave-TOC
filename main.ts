@@ -44,7 +44,7 @@ function cleanHeadingText(text: string): string {
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/(`+|\*\*|__|~~|\*|_)/g, "")
-    .replace(/\\([#*_`~\[\]])/g, "$1")
+    .replace(/\\([#*_`~[\]])/g, "$1")
     .trim();
 }
 
@@ -67,7 +67,7 @@ function cleanPreviewLine(line: string): string {
     .replace(/<https?:\/\/[^>]+>/g, "")
     .replace(/<[^>]+>/g, "")
     .replace(/(`+|\*\*|__|~~|\*|_)/g, "")
-    .replace(/\\([#*_`~\[\]])/g, "$1")
+    .replace(/\\([#*_`~[\]])/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -129,11 +129,12 @@ export default class WaveTocPlugin extends Plugin {
   private refreshTimer = 0;
 
   async onload(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const storedSettings = (await this.loadData()) as Partial<FloatingTocSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, storedSettings ?? {});
     this.app.workspace.detachLeavesOfType(LEGACY_VIEW_TYPE);
 
     this.addCommand({
-      id: "toggle-floating-wave-toc",
+      id: "toggle-floating-toc",
       name: "Toggle floating TOC",
       callback: async () => {
         this.settings.enabled = !this.settings.enabled;
@@ -260,7 +261,7 @@ class FloatingToc {
       this.tickEls.push(tick);
     });
     this.railEl.style.setProperty("--wave-heading-count", String(this.headings.length));
-    requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       if (!this.railEl) return;
       const available = Math.max(0, this.railEl.clientHeight - 8);
       const count = this.headings.length;
@@ -295,7 +296,7 @@ class FloatingToc {
       () => host.removeEventListener("wheel", onScroll),
       () => document.removeEventListener("selectionchange", onScroll)
     );
-    requestAnimationFrame(() => this.updateActive());
+    window.requestAnimationFrame(() => this.updateActive());
   }
 
   destroy(): void {
@@ -303,8 +304,8 @@ class FloatingToc {
   }
 
   private destroyDom(): void {
-    if (this.frame) cancelAnimationFrame(this.frame);
-    if (this.waveFrame) cancelAnimationFrame(this.waveFrame);
+    if (this.frame) window.cancelAnimationFrame(this.frame);
+    if (this.waveFrame) window.cancelAnimationFrame(this.waveFrame);
     this.frame = 0;
     this.waveFrame = 0;
     this.cleanup.forEach(fn => fn());
@@ -426,9 +427,9 @@ class FloatingToc {
         this.waveFrame = 0;
         return;
       }
-      this.waveFrame = requestAnimationFrame(animate);
+      this.waveFrame = window.requestAnimationFrame(animate);
     };
-    this.waveFrame = requestAnimationFrame(animate);
+    this.waveFrame = window.requestAnimationFrame(animate);
   }
 
   private handleClick(event: MouseEvent): void {
@@ -469,7 +470,7 @@ class FloatingToc {
 
   private scheduleActiveUpdate(): void {
     if (this.frame) return;
-    this.frame = requestAnimationFrame(() => {
+    this.frame = window.requestAnimationFrame(() => {
       this.frame = 0;
       this.updateActive();
     });
@@ -660,7 +661,6 @@ class FloatingTocSettingTab extends PluginSettingTab {
       .setDesc(text.heightDesc)
       .addSlider(slider => slider
         .setLimits(35, 85, 5)
-        .setDynamicTooltip()
         .setValue(this.plugin.settings.verticalSize)
         .onChange(async value => {
           this.plugin.settings.verticalSize = value;
