@@ -67,6 +67,11 @@
   opacity: 1;
 }
 
+.wave-floating-toc.is-hovering .wave-floating-toc-tick.is-active:not(.is-hovered) {
+  background: color-mix(in srgb, var(--text-normal) 27%, transparent);
+  opacity: .86;
+}
+
 .wave-floating-toc-tick.is-hovered {
   background: var(--text-normal);
   opacity: 1;
