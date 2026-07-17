@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.5 — 2026-07-17
+
+### 中文
+
+- 为发布文件生成新的校验摘要，避免插件市场继续关联 1.0.3 中无法验证的旧来源证明。
+- 保持浮动目录交互和视觉行为不变，并延续全部审核兼容性修复。
+
+### English
+
+- Generated new release-asset digests so the marketplace no longer associates the files with the unverifiable 1.0.3 provenance record.
+- Kept the floating TOC interactions and visual behavior unchanged while preserving all review compatibility fixes.
+
 ## 1.0.4 — 2026-07-17
 
 ### 中文
