@@ -349,6 +349,7 @@ class FloatingToc {
 
   private renderHover(index: number): void {
     if (!this.bubbleEl || !this.bubbleTitleEl || !this.bubblePreviewEl || !this.railEl) return;
+    this.rootEl?.addClass("is-hovering");
     this.tickEls.forEach((tick, tickIndex) => tick.toggleClass("is-hovered", tickIndex === index));
     const tick = this.tickEls[index];
     const heading = this.headings[index];
@@ -372,6 +373,7 @@ class FloatingToc {
   private clearHover(): void {
     this.tickEls[this.hoverIndex]?.removeClass("is-hovered");
     this.hoverIndex = -1;
+    this.rootEl?.removeClass("is-hovering");
     this.bubbleEl?.removeClass("is-visible");
     this.waveActive = false;
     this.ensureWaveAnimation();
@@ -410,7 +412,7 @@ class FloatingToc {
         const strength = influence * this.waveAmplitude;
         const width = baseWidth + (51 - baseWidth) * strength;
         tick.style.width = `${width.toFixed(2)}px`;
-        tick.style.opacity = `${(0.86 + strength * 0.14).toFixed(3)}`;
+        tick.style.opacity = tick.classList.contains("is-hovered") ? "1" : "0.86";
       });
 
       const settled = !this.waveActive && this.waveAmplitude < 0.008 && Math.abs(this.waveVelocity) < 0.008;
