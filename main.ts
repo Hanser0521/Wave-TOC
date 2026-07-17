@@ -16,6 +16,7 @@ interface FloatingTocSettings {
   verticalSize: number;
   navigationMode: "hover" | "click";
   activeTrackingMode: "viewport" | "cursor";
+  bubblePreviewMode: "title" | "paragraph" | "summary";
   uiLanguage: "zh" | "en";
 }
 
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: FloatingTocSettings = {
   verticalSize: 70,
   navigationMode: "hover",
   activeTrackingMode: "viewport",
+  bubblePreviewMode: "summary",
   uiLanguage: "zh"
 };
 
@@ -33,6 +35,8 @@ interface TocHeading {
   text: string;
   level: number;
   line: number;
+  firstParagraph: string;
+  summary: string;
 }
 
 function cleanHeadingText(text: string): string {
@@ -42,6 +46,81 @@ function cleanHeadingText(text: string): string {
     .replace(/(`+|\*\*|__|~~|\*|_)/g, "")
     .replace(/\\([#*_`~\[\]])/g, "$1")
     .trim();
+}
+
+function truncatePreview(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  const shortened = text.slice(0, maxLength).replace(/\s+\S*$/, "").trimEnd();
+  return `${shortened || text.slice(0, maxLength).trimEnd()}…`;
+}
+
+function cleanPreviewLine(line: string): string {
+  return line
+    .replace(/^>\s*/, "")
+    .replace(/^\[![^\]]+\][+-]?\s*/, "")
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
+    .replace(/!\[\[[^\]]+\]\]/g, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
+    .replace(/\[\[([^\]]+)\]\]/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/<https?:\/\/[^>]+>/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/(`+|\*\*|__|~~|\*|_)/g, "")
+    .replace(/\\([#*_`~\[\]])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractParagraphs(lines: string[], startLine: number, endLine: number): string[] {
+  const paragraphs: string[] = [];
+  let current: string[] = [];
+  let insideFence = false;
+  const flush = () => {
+    const paragraph = current.join(" ").replace(/\s+/g, " ").trim();
+    if (paragraph) paragraphs.push(paragraph);
+    current = [];
+  };
+
+  for (let lineIndex = startLine; lineIndex < Math.min(endLine, lines.length); lineIndex++) {
+    const raw = lines[lineIndex].trim();
+    if (/^(```|~~~)/.test(raw)) {
+      flush();
+      insideFence = !insideFence;
+      continue;
+    }
+    if (insideFence) continue;
+    if (!raw || /^#{1,6}\s+/.test(raw) || /^(?:-{3,}|\*{3,}|_{3,})$/.test(raw)) {
+      flush();
+      continue;
+    }
+    if (/^\|.*\|$/.test(raw) || /^\|?[\s:|-]+\|?$/.test(raw)) {
+      flush();
+      continue;
+    }
+    const cleaned = cleanPreviewLine(raw);
+    if (cleaned) current.push(cleaned);
+  }
+  flush();
+  return paragraphs;
+}
+
+function createFirstParagraph(lines: string[], startLine: number, endLine: number): string {
+  return truncatePreview(extractParagraphs(lines, startLine, endLine)[0] ?? "", 220);
+}
+
+function createLocalSummary(lines: string[], startLine: number, endLine: number): string {
+  const combined = extractParagraphs(lines, startLine, endLine).join(" ");
+  if (!combined) return "";
+  const sentences = combined.match(/[^。！？.!?]+[。！？.!?]+|[^。！？.!?]+$/g) ?? [combined];
+  let summary = "";
+  for (const sentence of sentences.slice(0, 3)) {
+    const candidate = `${summary}${summary ? " " : ""}${sentence.trim()}`;
+    if (summary && candidate.length > 280) break;
+    summary = candidate;
+    if (summary.length >= 150) break;
+  }
+  return truncatePreview(summary || combined, 280);
 }
 
 export default class WaveTocPlugin extends Plugin {
@@ -115,6 +194,8 @@ class FloatingToc {
   private rootEl: HTMLElement | null = null;
   private railEl: HTMLElement | null = null;
   private bubbleEl: HTMLElement | null = null;
+  private bubbleTitleEl: HTMLElement | null = null;
+  private bubblePreviewEl: HTMLElement | null = null;
   private tickEls: HTMLElement[] = [];
   private headings: TocHeading[] = [];
   private activeIndex = -1;
@@ -137,13 +218,27 @@ class FloatingToc {
     if (!this.plugin.settings.enabled || !this.view.file) return;
 
     const cache = this.plugin.app.metadataCache.getFileCache(this.view.file);
-    this.headings = (cache?.headings ?? [])
-      .filter(heading => heading.level <= this.plugin.settings.maxDepth)
-      .map(heading => ({
+    const sourceLines = this.view.editor.getValue().split(/\r?\n/);
+    const cachedHeadings = cache?.headings ?? [];
+    this.headings = cachedHeadings
+      .map((heading, headingIndex) => {
+        const startLine = heading.position.start.line + 1;
+        const nextHeadingLine = cachedHeadings[headingIndex + 1]?.position.start.line ?? sourceLines.length;
+        const nextPeerIndex = cachedHeadings.findIndex((candidate, candidateIndex) =>
+          candidateIndex > headingIndex && candidate.level <= heading.level
+        );
+        const sectionEndLine = nextPeerIndex >= 0
+          ? cachedHeadings[nextPeerIndex].position.start.line
+          : sourceLines.length;
+        return {
         text: cleanHeadingText(heading.heading),
         level: heading.level,
-        line: heading.position.start.line
-      }));
+        line: heading.position.start.line,
+        firstParagraph: createFirstParagraph(sourceLines, startLine, nextHeadingLine),
+        summary: createLocalSummary(sourceLines, startLine, sectionEndLine)
+        };
+      })
+      .filter(heading => heading.level <= this.plugin.settings.maxDepth);
     if (!this.headings.length) return;
 
     const host = this.view.contentEl;
@@ -154,6 +249,8 @@ class FloatingToc {
     this.rootEl.style.setProperty("--wave-toc-height", `${this.plugin.settings.verticalSize}vh`);
     this.railEl = this.rootEl.createDiv({ cls: "wave-floating-toc-rail" });
     this.bubbleEl = this.rootEl.createDiv({ cls: "wave-floating-toc-bubble" });
+    this.bubbleTitleEl = this.bubbleEl.createDiv({ cls: "wave-floating-toc-bubble-title" });
+    this.bubblePreviewEl = this.bubbleEl.createDiv({ cls: "wave-floating-toc-bubble-preview" });
 
     this.headings.forEach((heading, index) => {
       const tick = this.railEl!.createDiv({ cls: "wave-floating-toc-tick" });
@@ -217,6 +314,8 @@ class FloatingToc {
     this.rootEl = null;
     this.railEl = null;
     this.bubbleEl = null;
+    this.bubbleTitleEl = null;
+    this.bubblePreviewEl = null;
     this.tickEls = [];
     this.activeIndex = -1;
     this.hoverIndex = -1;
@@ -249,13 +348,20 @@ class FloatingToc {
   }
 
   private renderHover(index: number): void {
-    if (!this.bubbleEl || !this.railEl) return;
+    if (!this.bubbleEl || !this.bubbleTitleEl || !this.bubblePreviewEl || !this.railEl) return;
     this.tickEls.forEach((tick, tickIndex) => tick.toggleClass("is-hovered", tickIndex === index));
     const tick = this.tickEls[index];
     const heading = this.headings[index];
     if (!tick || !heading) return;
 
-    this.bubbleEl.setText(heading.text);
+    const previewMode = this.plugin.settings.bubblePreviewMode;
+    const preview = previewMode === "paragraph"
+      ? heading.firstParagraph
+      : previewMode === "summary" ? heading.summary : "";
+    this.bubbleTitleEl.setText(heading.text);
+    this.bubblePreviewEl.setText(preview);
+    this.bubbleEl.toggleClass("has-preview", Boolean(preview));
+    this.bubblePreviewEl.toggleClass("is-hidden", !preview);
     this.bubbleEl.addClass("is-visible");
     const railRect = this.railEl.getBoundingClientRect();
     const tickRect = tick.getBoundingClientRect();
@@ -434,6 +540,11 @@ class FloatingTocSettingTab extends PluginSettingTab {
       navigationDesc: "选择鼠标滑过刻度时正文立即跟随，或仅在点击刻度后定位。",
       navigationHover: "悬停时正文跟随",
       navigationClick: "点击后正文定位",
+      previewName: "悬停卡片内容",
+      previewDesc: "选择鼠标悬停刻度时显示的正文预览。内容摘要仅在本地提取，不会发送笔记内容。",
+      previewTitle: "仅显示标题",
+      previewParagraph: "标题 + 第一段正文",
+      previewSummary: "标题 + 内容摘要（默认）",
       trackingName: "正文滚动同步方式",
       trackingDesc: "选择滚动正文时刻度自动跟随，或保留点击正文后才更新刻度的旧版方式。",
       trackingViewport: "正文滚动时自动跟随（默认）",
@@ -453,6 +564,11 @@ class FloatingTocSettingTab extends PluginSettingTab {
       navigationDesc: "Choose whether the note follows tick hover or moves only after a click.",
       navigationHover: "Follow on hover",
       navigationClick: "Navigate on click",
+      previewName: "Hover card content",
+      previewDesc: "Choose the note preview shown on tick hover. Summaries are extracted locally and note content is never sent anywhere.",
+      previewTitle: "Title only",
+      previewParagraph: "Title + first paragraph",
+      previewSummary: "Title + content summary (default)",
       trackingName: "Content scroll tracking",
       trackingDesc: "Choose automatic viewport tracking while scrolling or the legacy cursor/click behavior.",
       trackingViewport: "Follow while scrolling (default)",
@@ -508,6 +624,20 @@ class FloatingTocSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.navigationMode)
         .onChange(async value => {
           this.plugin.settings.navigationMode = value as "hover" | "click";
+          await this.plugin.saveSettings();
+        }));
+    new Setting(containerEl)
+      .setName(text.previewName)
+      .setDesc(text.previewDesc)
+      .addDropdown(dropdown => dropdown
+        .addOptions({
+          title: text.previewTitle,
+          paragraph: text.previewParagraph,
+          summary: text.previewSummary
+        })
+        .setValue(this.plugin.settings.bubblePreviewMode)
+        .onChange(async value => {
+          this.plugin.settings.bubblePreviewMode = value as "title" | "paragraph" | "summary";
           await this.plugin.saveSettings();
         }));
     new Setting(containerEl)
