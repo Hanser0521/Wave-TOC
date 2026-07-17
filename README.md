@@ -6,6 +6,7 @@ A fluid, rail-style table of contents for Obsidian with smooth wave interactions
 
 - Floating H1–H3 rail inside the active note
 - Smooth multi-tick hover wave and heading bubble
+- Optional hover-card previews: title only, first paragraph, or a locally extracted section summary
 - Current section indicated by color without changing tick length
 - Configurable navigation: follow the pointer or jump only after click
 - Configurable section tracking: follow the scrolling viewport or use the legacy cursor/click behavior
@@ -27,7 +28,11 @@ Copy `manifest.json`, `main.js`, and `styles.css` into:
 <Vault>/.obsidian/plugins/wave-toc/
 ```
 
-Then reload Obsidian and enable **Wave TOC** under Community plugins. Navigation and scroll-tracking behavior can be changed under **Settings → Wave TOC**. The settings interface is available in Chinese and English.
+Then reload Obsidian and enable **Wave TOC** under Community plugins. Hover-card content, navigation, and scroll-tracking behavior can be changed under **Settings → Wave TOC**. The settings interface is available in Chinese and English.
+
+## Privacy
+
+Wave TOC works locally inside Obsidian. It does not send note content to external services, collect telemetry, show ads, or require an account.
 
 ## Acknowledgements
 
