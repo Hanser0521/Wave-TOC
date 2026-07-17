@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
-  attestations: write
 
 jobs:
   build-and-upload:
@@ -30,14 +28,6 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
-
-      - name: Attest release assets
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: |
-            main.js
-            manifest.json
-            styles.css
 
       - name: Attach Obsidian plugin files
         env:
