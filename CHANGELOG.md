@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.2 — 2026-07-17
+
+### 中文
+
+- 新增悬停卡片内容选项：仅标题、标题 + 第一段正文、标题 + 本地摘要。
+- 悬停卡片区分标题与摘要字体层级，更接近正文预览卡片效果。
+- 摘要在本地从当前笔记内容提取，不会发送笔记内容到外部服务。
+
+### English
+
+- Added hover-card content modes: title only, title plus first paragraph, and title plus locally extracted summary.
+- Separated title and preview typography in the hover card for a clearer preview-card layout.
+- Summaries are extracted locally from the current note and note content is not sent to external services.
+
 ## 1.0.1 — 2026-07-17
 
 ### 中文
