@@ -15,7 +15,7 @@ Designed for long notes, it stays accurate in both Editing and Reading views and
 - Optional hover-card previews: title only, first paragraph, or a locally extracted section summary
 - Current section indicated by color without changing tick length
 - Configurable navigation: follow the pointer or jump only after click
-- Configurable section tracking: follow the scrolling viewport or use the legacy cursor/click behavior
+- Configurable section tracking: follow the scrolling viewport or use the cursor click behavior
 - Localized settings with Chinese and English interfaces
 - Accurate heading navigation in Editing and Reading views
 - Automatic updates when headings change
