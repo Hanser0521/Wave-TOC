@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.4 — 2026-07-17
+
+### 中文
+
+- 移除当前插件市场验证器无法通过校验的 GitHub 构建来源证明，避免非必需建议项阻塞上架。
+- 保留 1.0.3 中全部审核修复：清单描述、弹出窗口兼容性、命令标识、依赖声明、正则表达式和 CSS 规则。
+
+### English
+
+- Removed GitHub build provenance attestations that the current marketplace verifier could not validate, preventing an optional recommendation from blocking publication.
+- Preserved all 1.0.3 review fixes for the manifest description, popout compatibility, command naming, dependency declarations, regular expressions, and CSS rules.
+
 ## 1.0.3 — 2026-07-17
 
 ### 中文
