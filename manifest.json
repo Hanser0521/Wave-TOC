@@ -1,7 +1,7 @@
 {
   "id": "wave-toc",
   "name": "Wave TOC",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minAppVersion": "1.5.0",
   "description": "A fluid, rail-style floating table of contents for Obsidian.",
   "author": "Hanser",
