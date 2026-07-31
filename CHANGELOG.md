@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.6 — 2026-07-31
+
+### 中文
+
+- 修复阅读模式下点击或悬停远端刻度时，无法准确定位到对应标题行的问题。
+- 兼容 Obsidian 对长文阅读视图的虚拟渲染：阅读模式统一使用 Markdown 源文件行号精确跳转，也可正确区分同名标题。
+- 阅读模式下的当前刻度跟随改为依据预览视图的源文件行号计算，避免渲染区段变化造成刻度错位。
+
+### English
+
+- Fixed inaccurate heading positioning when clicking or hovering distant ticks in Reading view.
+- Added support for Obsidian's virtualized long-note rendering by using precise Markdown source-line navigation throughout Reading view, including for duplicate heading titles.
+- Updated active-tick tracking in Reading view to follow the preview's source line, preventing drift as rendered sections change.
+
 ## 1.0.5 — 2026-07-17
 
 ### 中文

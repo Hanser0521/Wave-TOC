@@ -17,7 +17,7 @@ Designed for long notes, it stays accurate in both Editing and Reading views and
 - Configurable navigation: follow the pointer or jump only after click
 - Configurable section tracking: follow the scrolling viewport or use the cursor click behavior
 - Localized settings with Chinese and English interfaces
-- Accurate heading navigation in Editing and Reading views
+- Source-line-accurate heading navigation in Editing and Reading views, including virtualized long notes
 - Automatic updates when headings change
 - Configurable side, heading depth, and rail height
 

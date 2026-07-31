@@ -444,20 +444,14 @@ class FloatingToc {
     if (this.hoverIndex >= 0) this.navigateTo(this.hoverIndex, true);
   }
 
-  private getRenderedHeadings(): HTMLElement[] {
-    return Array.from(this.view.containerEl.querySelectorAll<HTMLElement>(
-      ".markdown-preview-view h1, .markdown-preview-view h2, .markdown-preview-view h3, " +
-      ".markdown-preview-view h4, .markdown-preview-view h5, .markdown-preview-view h6"
-    )).filter(element => Number(element.tagName.slice(1)) <= this.plugin.settings.maxDepth);
-  }
-
   private navigateTo(index: number, commit: boolean): void {
     const heading = this.headings[index];
     if (!heading) return;
-    const rendered = this.getRenderedHeadings();
-    const target = rendered[index];
-    if (target) {
-      target.scrollIntoView({ behavior: commit ? "smooth" : "auto", block: "start" });
+
+    if (this.view.getMode() === "preview") {
+      // Reading mode virtualizes long notes. Source-line navigation renders the
+      // correct section on demand and remains unambiguous for duplicate titles.
+      this.view.previewMode.applyScroll(heading.line);
     } else {
       this.view.editor.setCursor({ line: heading.line, ch: 0 });
       this.view.editor.scrollIntoView({
@@ -479,12 +473,11 @@ class FloatingToc {
 
   private updateActive(): void {
     if (!this.headings.length) return;
-    const rendered = this.getRenderedHeadings();
     let index = 0;
-    if (this.view.getMode() === "preview" && rendered.length) {
-      const anchor = this.view.containerEl.getBoundingClientRect().top + 100;
-      rendered.forEach((element, elementIndex) => {
-        if (element.getBoundingClientRect().top <= anchor) index = elementIndex;
+    if (this.view.getMode() === "preview") {
+      const line = this.view.previewMode.getScroll();
+      this.headings.forEach((heading, headingIndex) => {
+        if (heading.line <= line) index = headingIndex;
       });
     } else {
       const line = this.plugin.settings.activeTrackingMode === "viewport"
