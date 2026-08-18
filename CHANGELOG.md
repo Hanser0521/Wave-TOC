@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.7 — 2026-08-18
+
+### 中文
+
+- 新增高亮刻度颜色设置：默认继续跟随当前主题，也可以选择自定义颜色。
+- 当前章节及鼠标悬停刻度的两侧新增由近到远的颜色渐变，保留清晰焦点并增强层次感。
+- 重构波峰动画的跟随、回弹与复位节奏，并改用变换动画减少布局计算，使快速滑动更流畅、优雅、灵动。
+- 保持既有交互规则：正文滚动只改变刻度颜色，刻度长度波峰仍仅在鼠标悬停时出现。
+
+### English
+
+- Added a highlight-color setting that keeps the current theme color by default and supports a custom color.
+- Added a fading color gradient across neighboring ticks around the active section and hovered tick.
+- Refined wave following, rebound, and settling with transform-based animation for smoother, more graceful pointer movement.
+- Preserved the established interaction: content scrolling changes tick color only, while the length wave remains hover-driven.
+
 ## 1.0.6 — 2026-07-31
 
 ### 中文

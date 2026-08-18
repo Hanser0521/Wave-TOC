@@ -15,6 +15,8 @@ interface FloatingTocSettings {
   maxDepth: number;
   side: "left" | "right";
   verticalSize: number;
+  useCustomHighlightColor: boolean;
+  highlightColor: string;
   navigationMode: "hover" | "click";
   activeTrackingMode: "viewport" | "cursor";
   bubblePreviewMode: "title" | "paragraph" | "summary";
@@ -25,7 +27,9 @@ const DEFAULT_SETTINGS: FloatingTocSettings = {
   enabled: true,
   maxDepth: 3,
   side: "left",
-  verticalSize: 70,
+  verticalSize: 50,
+  useCustomHighlightColor: false,
+  highlightColor: "#7c3aed",
   navigationMode: "hover",
   activeTrackingMode: "viewport",
   bubblePreviewMode: "summary",
@@ -209,6 +213,7 @@ class FloatingToc {
   private waveAmplitude = 0;
   private waveTarget = 0;
   private waveActive = false;
+  private waveLastTime = 0;
   private pointerDownY: number | null = null;
   private suppressClick = false;
   private cleanup: Array<() => void> = [];
@@ -249,6 +254,12 @@ class FloatingToc {
     this.rootEl = host.createDiv({ cls: "wave-floating-toc" });
     this.rootEl.dataset.side = this.plugin.settings.side;
     this.rootEl.style.setProperty("--wave-toc-height", `${this.plugin.settings.verticalSize}vh`);
+    this.rootEl.style.setProperty(
+      "--wave-highlight-color",
+      this.plugin.settings.useCustomHighlightColor
+        ? this.plugin.settings.highlightColor
+        : "var(--text-normal)"
+    );
     this.railEl = this.rootEl.createDiv({ cls: "wave-floating-toc-rail" });
     this.bubbleEl = this.rootEl.createDiv({ cls: "wave-floating-toc-bubble" });
     this.bubbleTitleEl = this.bubbleEl.createDiv({ cls: "wave-floating-toc-bubble-title" });
@@ -324,6 +335,7 @@ class FloatingToc {
     this.waveVelocity = 0;
     this.waveAmplitude = 0;
     this.waveActive = false;
+    this.waveLastTime = 0;
   }
 
   private handlePointerMove(event: MouseEvent): void {
@@ -388,43 +400,70 @@ class FloatingToc {
     }
     this.waveTarget = index;
     this.waveActive = true;
+    this.rootEl?.addClass("is-wave-active");
     this.ensureWaveAnimation();
   }
 
   private ensureWaveAnimation(): void {
     if (this.waveFrame) return;
-    const animate = () => {
+    const animate = (time: number) => {
+      const elapsed = this.waveLastTime ? time - this.waveLastTime : 1000 / 60;
+      const frameScale = Math.min(2, Math.max(0.35, elapsed / (1000 / 60)));
+      this.waveLastTime = time;
       const targetAmplitude = this.waveActive ? 1 : 0;
-      this.waveAmplitude += (targetAmplitude - this.waveAmplitude) * (this.waveActive ? 0.2 : 0.11);
+      const amplitudeResponse = this.waveActive ? 0.18 : 0.075;
+      const amplitudeEase = 1 - Math.pow(1 - amplitudeResponse, frameScale);
+      this.waveAmplitude += (targetAmplitude - this.waveAmplitude) * amplitudeEase;
 
       if (this.waveActive) {
-        const force = (this.waveTarget - this.wavePosition) * 0.2;
-        this.waveVelocity = (this.waveVelocity + force) * 0.68;
-        this.wavePosition += this.waveVelocity;
+        const force = (this.waveTarget - this.wavePosition) * 0.16 * frameScale;
+        this.waveVelocity = (this.waveVelocity + force) * Math.pow(0.72, frameScale);
+        this.wavePosition += this.waveVelocity * frameScale;
       } else {
-        this.waveVelocity *= 0.78;
-        this.wavePosition += this.waveVelocity;
+        this.waveVelocity *= Math.pow(0.8, frameScale);
+        this.wavePosition += this.waveVelocity * frameScale;
       }
 
       this.tickEls.forEach((tick, index) => {
         const level = this.headings[index]?.level ?? 3;
         const baseWidth = level === 1 ? 27 : level === 2 ? 20 : 15;
         const distance = index - this.wavePosition;
-        const influence = Math.exp(-(distance * distance) / (2 * 1.55 * 1.55));
+        const influence = Math.exp(-(distance * distance) / (2 * 1.7 * 1.7));
         const strength = influence * this.waveAmplitude;
         const width = baseWidth + (51 - baseWidth) * strength;
-        tick.style.width = `${width.toFixed(2)}px`;
-        tick.style.opacity = tick.classList.contains("is-hovered") ? "1" : "0.86";
+        tick.style.transform = `scaleX(${(width / baseWidth).toFixed(4)})`;
+        tick.style.opacity = (0.86 + 0.14 * strength).toFixed(3);
+        tick.toggleClass("is-wave-colored", strength > 0.012);
+        tick.style.setProperty(
+          "--wave-highlight-strength",
+          `${(27 + 73 * strength).toFixed(1)}%`
+        );
       });
 
+      const resting = this.waveActive &&
+        Math.abs(1 - this.waveAmplitude) < 0.004 &&
+        Math.abs(this.waveTarget - this.wavePosition) < 0.004 &&
+        Math.abs(this.waveVelocity) < 0.004;
       const settled = !this.waveActive && this.waveAmplitude < 0.008 && Math.abs(this.waveVelocity) < 0.008;
+      if (resting) {
+        this.waveAmplitude = 1;
+        this.wavePosition = this.waveTarget;
+        this.waveVelocity = 0;
+        this.waveLastTime = 0;
+        this.waveFrame = 0;
+        return;
+      }
       if (settled) {
         this.waveAmplitude = 0;
         this.waveVelocity = 0;
+        this.waveLastTime = 0;
         this.tickEls.forEach(tick => {
-          tick.style.removeProperty("width");
+          tick.style.removeProperty("transform");
           tick.style.removeProperty("opacity");
+          tick.style.removeProperty("--wave-highlight-strength");
+          tick.removeClass("is-wave-colored");
         });
+        this.rootEl?.removeClass("is-wave-active");
         this.waveFrame = 0;
         return;
       }
@@ -514,6 +553,24 @@ class FloatingToc {
     this.tickEls[this.activeIndex]?.removeClass("is-active");
     this.activeIndex = index;
     this.tickEls[index]?.addClass("is-active");
+    this.updateActiveGradient(index);
+  }
+
+  private updateActiveGradient(activeIndex: number): void {
+    this.tickEls.forEach((tick, index) => {
+      const distance = Math.abs(index - activeIndex);
+      const influence = Math.exp(-(distance * distance) / (2 * 1.35 * 1.35));
+      const showGradient = distance > 0 && influence > 0.06;
+      tick.toggleClass("is-active-gradient", showGradient);
+      if (showGradient) {
+        tick.style.setProperty(
+          "--wave-active-strength",
+          `${(27 + 61 * influence).toFixed(1)}%`
+        );
+      } else {
+        tick.style.removeProperty("--wave-active-strength");
+      }
+    });
   }
 }
 
@@ -546,6 +603,8 @@ class FloatingTocSettingTab extends PluginSettingTab {
       trackingDesc: "选择滚动正文时刻度自动跟随，或保留点击正文后才更新刻度的旧版方式。",
       trackingViewport: "正文滚动时自动跟随（默认）",
       trackingCursor: "光标点击后跟随",
+      highlightName: "自定义高亮颜色",
+      highlightDesc: "关闭时保持当前主题颜色；开启后使用右侧颜色，并在高亮刻度两侧显示渐变。",
       heightName: "刻度轨道高度",
       heightDesc: "设置刻度轨道占窗口高度的百分比。"
     } : {
@@ -570,6 +629,8 @@ class FloatingTocSettingTab extends PluginSettingTab {
       trackingDesc: "Choose automatic viewport tracking while scrolling or the legacy cursor/click behavior.",
       trackingViewport: "Follow while scrolling (default)",
       trackingCursor: "Follow after cursor click",
+      highlightName: "Custom highlight color",
+      highlightDesc: "Keep the current theme color when disabled, or use the selected color with a gradient across neighboring ticks.",
       heightName: "Rail height",
       heightDesc: "Set the rail height as a percentage of the window."
     };
@@ -648,6 +709,21 @@ class FloatingTocSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.activeTrackingMode)
         .onChange(async value => {
           this.plugin.settings.activeTrackingMode = value as "viewport" | "cursor";
+          await this.plugin.saveSettings();
+        }));
+    new Setting(containerEl)
+      .setName(text.highlightName)
+      .setDesc(text.highlightDesc)
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.useCustomHighlightColor)
+        .onChange(async value => {
+          this.plugin.settings.useCustomHighlightColor = value;
+          await this.plugin.saveSettings();
+        }))
+      .addColorPicker(color => color
+        .setValue(this.plugin.settings.highlightColor)
+        .onChange(async value => {
+          this.plugin.settings.highlightColor = value;
           await this.plugin.saveSettings();
         }));
     new Setting(containerEl)

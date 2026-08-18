@@ -5,7 +5,8 @@
 }
 
 .wave-floating-toc {
-  --wave-toc-height: 70vh;
+  --wave-toc-height: 50vh;
+  --wave-highlight-color: var(--text-normal);
   position: absolute;
   z-index: var(--layer-popover);
   top: 50%;
@@ -54,7 +55,7 @@
   background: color-mix(in srgb, var(--text-normal) 27%, transparent);
   opacity: .86;
   transform-origin: left center;
-  will-change: width, opacity;
+  will-change: transform, opacity, background-color;
   transition:
     background-color 160ms ease,
     opacity 100ms linear;
@@ -65,22 +66,38 @@
 .wave-floating-toc-tick[data-level="3"] { width: 15px; }
 
 .wave-floating-toc-tick.is-active {
-  background: color-mix(in srgb, var(--text-normal) 88%, transparent);
+  background: color-mix(in srgb, var(--wave-highlight-color) 88%, transparent);
   opacity: 1;
 }
 
-.wave-floating-toc.is-hovering .wave-floating-toc-tick.is-active:not(.is-hovered) {
+.wave-floating-toc-tick.is-active-gradient {
+  background: color-mix(
+    in srgb,
+    var(--wave-highlight-color) var(--wave-active-strength, 27%),
+    transparent
+  );
+}
+
+.wave-floating-toc.is-wave-active .wave-floating-toc-tick:is(.is-active, .is-active-gradient):not(.is-wave-colored) {
   background: color-mix(in srgb, var(--text-normal) 27%, transparent);
   opacity: .86;
 }
 
 .wave-floating-toc-tick.is-hovered {
-  background: var(--text-normal);
+  background: var(--wave-highlight-color);
   opacity: 1;
 }
 
 .wave-floating-toc-tick.is-active.is-hovered {
-  background: var(--text-normal);
+  background: var(--wave-highlight-color);
+}
+
+.wave-floating-toc.is-wave-active .wave-floating-toc-tick.is-wave-colored {
+  background: color-mix(
+    in srgb,
+    var(--wave-highlight-color) var(--wave-highlight-strength, 27%),
+    transparent
+  );
 }
 
 .wave-floating-toc[data-side="right"] .wave-floating-toc-tick {
@@ -104,6 +121,7 @@
   transform: translate3d(-8px, -50%, 0) scale(.97);
   transform-origin: left center;
   transition:
+    top 190ms cubic-bezier(.22, 1, .36, 1),
     opacity 120ms ease,
     transform 220ms cubic-bezier(.22, 1, .36, 1);
 }
