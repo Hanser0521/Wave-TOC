@@ -3,7 +3,8 @@ import {
   MarkdownView,
   Plugin,
   PluginSettingTab,
-  Setting
+  Setting,
+  SettingDefinitionItem
 } from "obsidian";
 import { EditorView } from "@codemirror/view";
 
@@ -22,6 +23,8 @@ interface FloatingTocSettings {
   bubblePreviewMode: "title" | "paragraph" | "summary";
   uiLanguage: "zh" | "en";
 }
+
+type FloatingTocSettingKey = keyof FloatingTocSettings;
 
 const DEFAULT_SETTINGS: FloatingTocSettings = {
   enabled: true,
@@ -577,9 +580,7 @@ class FloatingToc {
 class FloatingTocSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: WaveTocPlugin) { super(app, plugin); }
 
-  display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
+  getSettingDefinitions(): SettingDefinitionItem<FloatingTocSettingKey>[] {
     const isChinese = this.plugin.settings.uiLanguage === "zh";
     const text = isChinese ? {
       languageName: "界面语言",
@@ -635,106 +636,153 @@ class FloatingTocSettingTab extends PluginSettingTab {
       heightDesc: "Set the rail height as a percentage of the window."
     };
 
-    new Setting(containerEl)
-      .setName(text.languageName)
-      .setDesc(text.languageDesc)
-      .addDropdown(dropdown => dropdown
-        .addOptions({ zh: "中文", en: "English" })
-        .setValue(this.plugin.settings.uiLanguage)
-        .onChange(async value => {
-          this.plugin.settings.uiLanguage = value as "zh" | "en";
-          await this.plugin.saveSettings();
-          this.display();
-        }));
-    new Setting(containerEl)
-      .setName(text.enabledName)
-      .addToggle(toggle => toggle.setValue(this.plugin.settings.enabled).onChange(async value => {
-        this.plugin.settings.enabled = value;
-        await this.plugin.saveSettings();
-      }));
-    new Setting(containerEl)
-      .setName(text.positionName)
-      .addDropdown(dropdown => dropdown
-        .addOptions({ left: text.left, right: text.right })
-        .setValue(this.plugin.settings.side)
-        .onChange(async value => {
-          this.plugin.settings.side = value as "left" | "right";
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
-      .setName(text.depthName)
-      .setDesc(text.depthDesc)
-      .addDropdown(dropdown => dropdown
-        .addOptions({ "1": "H1", "2": "H1–H2", "3": "H1–H3" })
-        .setValue(String(this.plugin.settings.maxDepth))
-        .onChange(async value => {
-          this.plugin.settings.maxDepth = Number(value);
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
-      .setName(text.navigationName)
-      .setDesc(text.navigationDesc)
-      .addDropdown(dropdown => dropdown
-        .addOptions({
-          hover: text.navigationHover,
-          click: text.navigationClick
-        })
-        .setValue(this.plugin.settings.navigationMode)
-        .onChange(async value => {
-          this.plugin.settings.navigationMode = value as "hover" | "click";
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
-      .setName(text.previewName)
-      .setDesc(text.previewDesc)
-      .addDropdown(dropdown => dropdown
-        .addOptions({
-          title: text.previewTitle,
-          paragraph: text.previewParagraph,
-          summary: text.previewSummary
-        })
-        .setValue(this.plugin.settings.bubblePreviewMode)
-        .onChange(async value => {
-          this.plugin.settings.bubblePreviewMode = value as "title" | "paragraph" | "summary";
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
-      .setName(text.trackingName)
-      .setDesc(text.trackingDesc)
-      .addDropdown(dropdown => dropdown
-        .addOptions({
-          viewport: text.trackingViewport,
-          cursor: text.trackingCursor
-        })
-        .setValue(this.plugin.settings.activeTrackingMode)
-        .onChange(async value => {
-          this.plugin.settings.activeTrackingMode = value as "viewport" | "cursor";
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
-      .setName(text.highlightName)
-      .setDesc(text.highlightDesc)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.useCustomHighlightColor)
-        .onChange(async value => {
-          this.plugin.settings.useCustomHighlightColor = value;
-          await this.plugin.saveSettings();
-        }))
-      .addColorPicker(color => color
-        .setValue(this.plugin.settings.highlightColor)
-        .onChange(async value => {
-          this.plugin.settings.highlightColor = value;
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
-      .setName(text.heightName)
-      .setDesc(text.heightDesc)
-      .addSlider(slider => slider
-        .setLimits(35, 85, 5)
-        .setValue(this.plugin.settings.verticalSize)
-        .onChange(async value => {
-          this.plugin.settings.verticalSize = value;
-          await this.plugin.saveSettings();
-        }));
+    return [
+      {
+        name: text.languageName,
+        desc: text.languageDesc,
+        aliases: isChinese ? ["Interface language"] : ["界面语言"],
+        control: {
+          type: "dropdown",
+          key: "uiLanguage",
+          options: { zh: "中文", en: "English" }
+        }
+      },
+      {
+        name: text.enabledName,
+        aliases: isChinese ? ["Enable floating TOC"] : ["启用浮动目录"],
+        control: { type: "toggle", key: "enabled" }
+      },
+      {
+        name: text.positionName,
+        aliases: isChinese ? ["Position"] : ["显示位置"],
+        control: {
+          type: "dropdown",
+          key: "side",
+          options: { left: text.left, right: text.right }
+        }
+      },
+      {
+        name: text.depthName,
+        desc: text.depthDesc,
+        aliases: isChinese ? ["Maximum heading depth"] : ["最大标题层级"],
+        control: {
+          type: "dropdown",
+          key: "maxDepth",
+          options: { "1": "H1", "2": "H1–H2", "3": "H1–H3" }
+        }
+      },
+      {
+        name: text.navigationName,
+        desc: text.navigationDesc,
+        aliases: isChinese ? ["Tick navigation"] : ["刻度导航方式"],
+        control: {
+          type: "dropdown",
+          key: "navigationMode",
+          options: {
+            hover: text.navigationHover,
+            click: text.navigationClick
+          }
+        }
+      },
+      {
+        name: text.previewName,
+        desc: text.previewDesc,
+        aliases: isChinese ? ["Hover card content"] : ["悬停卡片内容"],
+        control: {
+          type: "dropdown",
+          key: "bubblePreviewMode",
+          options: {
+            title: text.previewTitle,
+            paragraph: text.previewParagraph,
+            summary: text.previewSummary
+          }
+        }
+      },
+      {
+        name: text.trackingName,
+        desc: text.trackingDesc,
+        aliases: isChinese ? ["Content scroll tracking"] : ["正文滚动同步方式"],
+        control: {
+          type: "dropdown",
+          key: "activeTrackingMode",
+          options: {
+            viewport: text.trackingViewport,
+            cursor: text.trackingCursor
+          }
+        }
+      },
+      {
+        name: text.highlightName,
+        desc: text.highlightDesc,
+        aliases: isChinese ? ["Custom highlight color"] : ["自定义高亮颜色"],
+        render: (setting: Setting) => {
+          setting
+            .addToggle(toggle => toggle
+              .setValue(this.plugin.settings.useCustomHighlightColor)
+              .onChange(async value => {
+                this.plugin.settings.useCustomHighlightColor = value;
+                await this.plugin.saveSettings();
+              }))
+            .addColorPicker(color => color
+              .setValue(this.plugin.settings.highlightColor)
+              .onChange(async value => {
+                this.plugin.settings.highlightColor = value;
+                await this.plugin.saveSettings();
+              }));
+        }
+      },
+      {
+        name: text.heightName,
+        desc: text.heightDesc,
+        aliases: isChinese ? ["Rail height"] : ["刻度轨道高度"],
+        control: {
+          type: "slider",
+          key: "verticalSize",
+          min: 35,
+          max: 85,
+          step: 5
+        }
+      }
+    ];
+  }
+
+  getControlValue(key: string): unknown {
+    const value = this.plugin.settings[key as FloatingTocSettingKey];
+    return key === "maxDepth" ? String(value) : value;
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    switch (key as FloatingTocSettingKey) {
+      case "enabled":
+        this.plugin.settings.enabled = Boolean(value);
+        break;
+      case "maxDepth":
+        this.plugin.settings.maxDepth = Number(value);
+        break;
+      case "side":
+        this.plugin.settings.side = value as "left" | "right";
+        break;
+      case "verticalSize":
+        this.plugin.settings.verticalSize = Number(value);
+        break;
+      case "navigationMode":
+        this.plugin.settings.navigationMode = value as "hover" | "click";
+        break;
+      case "activeTrackingMode":
+        this.plugin.settings.activeTrackingMode = value as "viewport" | "cursor";
+        break;
+      case "bubblePreviewMode":
+        this.plugin.settings.bubblePreviewMode = value as "title" | "paragraph" | "summary";
+        break;
+      case "uiLanguage":
+        this.plugin.settings.uiLanguage = value as "zh" | "en";
+        break;
+      case "useCustomHighlightColor":
+      case "highlightColor":
+        return;
+    }
+
+    await this.plugin.saveSettings();
+    if (key === "uiLanguage") this.update();
   }
 }

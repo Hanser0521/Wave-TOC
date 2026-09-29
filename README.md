@@ -6,6 +6,8 @@ Wave TOC turns the active note's outline into a compact floating navigation rail
 
 Designed for long notes, it stays accurate in both Editing and Reading views and keeps the interaction calm: scrolling changes only the active color, while the smooth wave animation appears on hover.
 
+Requires Obsidian 1.13.0 or later.
+
 ![Wave TOC in action](https://raw.githubusercontent.com/Hanser0521/Wave-TOC/main/assets/wave-toc-demo.gif)
 
 ## Highlights
@@ -18,6 +20,7 @@ Designed for long notes, it stays accurate in both Editing and Reading views and
 - Configurable navigation: follow the pointer or jump only after click
 - Configurable section tracking: follow the scrolling viewport or use the cursor click behavior
 - Localized settings with Chinese and English interfaces
+- Searchable settings through Obsidian's native settings search
 - Source-line-accurate heading navigation in Editing and Reading views, including virtualized long notes
 - Automatic updates when headings change
 - Configurable side, heading depth, and rail height

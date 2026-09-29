@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.8 — 2026-09-29
+
+### 中文
+
+- 将设置页迁移到 Obsidian 1.13 声明式设置 API，使全部 Wave TOC 选项可被设置搜索检索，并移除已弃用的 `display()` 实现。
+- 最低兼容版本调整为 Obsidian 1.13.0，以与新版设置 API 保持一致。
+- GitHub Release 工作流为 `main.js`、`manifest.json` 和 `styles.css` 生成构建来源证明，便于验证附件确实由本仓库工作流构建。
+
+### English
+
+- Migrated the settings tab to Obsidian 1.13's declarative settings API, making every Wave TOC option searchable and removing the deprecated `display()` implementation.
+- Updated the minimum supported version to Obsidian 1.13.0 to match the new settings API.
+- Added build provenance attestations for `main.js`, `manifest.json`, and `styles.css` in the GitHub Release workflow.
+
 ## 1.0.7 — 2026-08-18
 
 ### 中文
