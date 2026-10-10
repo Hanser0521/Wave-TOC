@@ -117,6 +117,7 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
   opacity: 0;
   overflow: hidden;
+  text-align: start;
   pointer-events: none;
   transform: translate3d(-8px, -50%, 0) scale(.97);
   transform-origin: left center;
@@ -136,9 +137,10 @@
 .wave-floating-toc-bubble-title {
   overflow: hidden;
   color: var(--text-normal);
-  font-size: 15px;
+  font-size: var(--font-preferred-size, 15px);
   font-weight: 650;
   line-height: 1.35;
+  overflow-wrap: anywhere;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -157,9 +159,10 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(var(--font-preferred-size, 15px) * .8667);
   font-weight: 430;
   line-height: 1.55;
+  overflow-wrap: anywhere;
   white-space: normal;
 }
 

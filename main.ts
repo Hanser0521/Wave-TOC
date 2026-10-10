@@ -14,7 +14,7 @@ const PLUGIN_DISPLAY_NAME = "Wave TOC";
 interface FloatingTocSettings {
   enabled: boolean;
   maxDepth: number;
-  side: "left" | "right";
+  side: "auto" | "left" | "right";
   verticalSize: number;
   useCustomHighlightColor: boolean;
   highlightColor: string;
@@ -25,6 +25,7 @@ interface FloatingTocSettings {
 }
 
 type FloatingTocSettingKey = keyof FloatingTocSettings;
+type WaveSettingDefinitionItem = SettingDefinitionItem<FloatingTocSettingKey> & { id?: string };
 
 const DEFAULT_SETTINGS: FloatingTocSettings = {
   enabled: true,
@@ -47,6 +48,12 @@ interface TocHeading {
   summary: string;
 }
 
+interface SourceHeading {
+  text: string;
+  level: number;
+  line: number;
+}
+
 function cleanHeadingText(text: string): string {
   return text
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -54,6 +61,46 @@ function cleanHeadingText(text: string): string {
     .replace(/(`+|\*\*|__|~~|\*|_)/g, "")
     .replace(/\\([#*_`~[\]])/g, "$1")
     .trim();
+}
+
+function parseSourceHeadings(lines: string[]): SourceHeading[] {
+  const headings: SourceHeading[] = [];
+  let fenceMarker = "";
+  let fenceLength = 0;
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    const fence = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fence) {
+      const marker = fence[1][0];
+      if (!fenceMarker) {
+        fenceMarker = marker;
+        fenceLength = fence[1].length;
+      } else if (marker === fenceMarker && fence[1].length >= fenceLength) {
+        fenceMarker = "";
+        fenceLength = 0;
+      }
+      continue;
+    }
+    if (fenceMarker) continue;
+
+    const atx = line.match(/^ {0,3}(#{1,6})(?:[\t ]+(.*?)[\t ]*|[\t ]*)$/);
+    if (atx) {
+      const text = cleanHeadingText((atx[2] ?? "").replace(/[\t ]+#+[\t ]*$/, ""));
+      headings.push({ text, level: atx[1].length, line: lineIndex });
+      continue;
+    }
+
+    const nextLine = lines[lineIndex + 1] ?? "";
+    const setext = nextLine.match(/^ {0,3}(=+|-+)[\t ]*$/);
+    const text = cleanHeadingText(line.trim());
+    if (setext && text) {
+      headings.push({ text, level: setext[1][0] === "=" ? 1 : 2, line: lineIndex });
+      lineIndex++;
+    }
+  }
+
+  return headings;
 }
 
 function truncatePreview(text: string, maxLength: number): string {
@@ -154,6 +201,9 @@ export default class WaveTocPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleRefresh()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.scheduleRefresh()));
     this.registerEvent(this.app.workspace.on("file-open", () => this.scheduleRefresh()));
+    this.registerEvent(this.app.workspace.on("editor-change", (_editor, info) => {
+      if (info instanceof MarkdownView && !info.file) this.scheduleRefresh();
+    }));
     this.registerEvent(this.app.metadataCache.on("changed", file => {
       if (file === this.app.workspace.getActiveFile()) this.scheduleRefresh();
     }));
@@ -225,37 +275,50 @@ class FloatingToc {
 
   refresh(): void {
     this.destroyDom();
-    if (!this.plugin.settings.enabled || !this.view.file) return;
+    if (!this.plugin.settings.enabled) return;
 
-    const cache = this.plugin.app.metadataCache.getFileCache(this.view.file);
     const sourceLines = this.view.editor.getValue().split(/\r?\n/);
-    const cachedHeadings = cache?.headings ?? [];
-    this.headings = cachedHeadings
+    const cachedHeadings = this.view.file
+      ? this.plugin.app.metadataCache.getFileCache(this.view.file)?.headings ?? []
+      : [];
+    const sourceHeadings: SourceHeading[] = cachedHeadings.length
+      ? cachedHeadings.map(heading => ({
+        text: cleanHeadingText(heading.heading),
+        level: heading.level,
+        line: heading.position.start.line
+      }))
+      : parseSourceHeadings(sourceLines);
+    this.headings = sourceHeadings
       .map((heading, headingIndex) => {
-        const startLine = heading.position.start.line + 1;
-        const nextHeadingLine = cachedHeadings[headingIndex + 1]?.position.start.line ?? sourceLines.length;
-        const nextPeerIndex = cachedHeadings.findIndex((candidate, candidateIndex) =>
+        const startLine = heading.line + 1;
+        const nextHeadingLine = sourceHeadings[headingIndex + 1]?.line ?? sourceLines.length;
+        const nextPeerIndex = sourceHeadings.findIndex((candidate, candidateIndex) =>
           candidateIndex > headingIndex && candidate.level <= heading.level
         );
         const sectionEndLine = nextPeerIndex >= 0
-          ? cachedHeadings[nextPeerIndex].position.start.line
+          ? sourceHeadings[nextPeerIndex].line
           : sourceLines.length;
         return {
-        text: cleanHeadingText(heading.heading),
-        level: heading.level,
-        line: heading.position.start.line,
-        firstParagraph: createFirstParagraph(sourceLines, startLine, nextHeadingLine),
-        summary: createLocalSummary(sourceLines, startLine, sectionEndLine)
+          text: heading.text,
+          level: heading.level,
+          line: heading.line,
+          firstParagraph: createFirstParagraph(sourceLines, startLine, nextHeadingLine),
+          summary: createLocalSummary(sourceLines, startLine, sectionEndLine)
         };
       })
       .filter(heading => heading.level <= this.plugin.settings.maxDepth);
     if (!this.headings.length) return;
 
     const host = this.view.contentEl;
+    const hostWindow = host.win;
+    const hostDocument = host.doc;
     host.addClass("has-wave-floating-toc");
 
     this.rootEl = host.createDiv({ cls: "wave-floating-toc" });
-    this.rootEl.dataset.side = this.plugin.settings.side;
+    const hostDirection = hostWindow.getComputedStyle(host).direction;
+    this.rootEl.dataset.side = this.plugin.settings.side === "auto"
+      ? hostDirection === "rtl" ? "right" : "left"
+      : this.plugin.settings.side;
     this.rootEl.style.setProperty("--wave-toc-height", `${this.plugin.settings.verticalSize}vh`);
     this.rootEl.style.setProperty(
       "--wave-highlight-color",
@@ -276,7 +339,7 @@ class FloatingToc {
       this.tickEls.push(tick);
     });
     this.railEl.style.setProperty("--wave-heading-count", String(this.headings.length));
-    window.requestAnimationFrame(() => {
+    hostWindow.requestAnimationFrame(() => {
       if (!this.railEl) return;
       const available = Math.max(0, this.railEl.clientHeight - 8);
       const count = this.headings.length;
@@ -301,7 +364,7 @@ class FloatingToc {
     this.rootEl.addEventListener("click", onClick);
     host.addEventListener("scroll", onScroll, { capture: true, passive: true });
     host.addEventListener("wheel", onScroll, { passive: true });
-    document.addEventListener("selectionchange", onScroll, { passive: true });
+    hostDocument.addEventListener("selectionchange", onScroll, { passive: true });
     this.cleanup.push(
       () => this.rootEl?.removeEventListener("mousemove", onMove),
       () => this.rootEl?.removeEventListener("mousedown", onDown),
@@ -309,9 +372,9 @@ class FloatingToc {
       () => this.rootEl?.removeEventListener("click", onClick),
       () => host.removeEventListener("scroll", onScroll, { capture: true }),
       () => host.removeEventListener("wheel", onScroll),
-      () => document.removeEventListener("selectionchange", onScroll)
+      () => hostDocument.removeEventListener("selectionchange", onScroll)
     );
-    window.requestAnimationFrame(() => this.updateActive());
+    hostWindow.requestAnimationFrame(() => this.updateActive());
   }
 
   destroy(): void {
@@ -319,8 +382,9 @@ class FloatingToc {
   }
 
   private destroyDom(): void {
-    if (this.frame) window.cancelAnimationFrame(this.frame);
-    if (this.waveFrame) window.cancelAnimationFrame(this.waveFrame);
+    const hostWindow = this.view.contentEl.win;
+    if (this.frame) hostWindow.cancelAnimationFrame(this.frame);
+    if (this.waveFrame) hostWindow.cancelAnimationFrame(this.waveFrame);
     this.frame = 0;
     this.waveFrame = 0;
     this.cleanup.forEach(fn => fn());
@@ -470,9 +534,9 @@ class FloatingToc {
         this.waveFrame = 0;
         return;
       }
-      this.waveFrame = window.requestAnimationFrame(animate);
+      this.waveFrame = this.view.contentEl.win.requestAnimationFrame(animate);
     };
-    this.waveFrame = window.requestAnimationFrame(animate);
+    this.waveFrame = this.view.contentEl.win.requestAnimationFrame(animate);
   }
 
   private handleClick(event: MouseEvent): void {
@@ -507,7 +571,7 @@ class FloatingToc {
 
   private scheduleActiveUpdate(): void {
     if (this.frame) return;
-    this.frame = window.requestAnimationFrame(() => {
+    this.frame = this.view.contentEl.win.requestAnimationFrame(() => {
       this.frame = 0;
       this.updateActive();
     });
@@ -580,13 +644,14 @@ class FloatingToc {
 class FloatingTocSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: WaveTocPlugin) { super(app, plugin); }
 
-  getSettingDefinitions(): SettingDefinitionItem<FloatingTocSettingKey>[] {
+  getSettingDefinitions(): WaveSettingDefinitionItem[] {
     const isChinese = this.plugin.settings.uiLanguage === "zh";
     const text = isChinese ? {
       languageName: "界面语言",
       languageDesc: "选择 Wave TOC 设置菜单使用的语言。",
       enabledName: "启用浮动目录",
       positionName: "显示位置",
+      automatic: "跟随界面方向",
       left: "左侧",
       right: "右侧",
       depthName: "最大标题层级",
@@ -613,6 +678,7 @@ class FloatingTocSettingTab extends PluginSettingTab {
       languageDesc: "Choose the language used in the Wave TOC settings.",
       enabledName: "Enable floating TOC",
       positionName: "Position",
+      automatic: "Follow interface direction",
       left: "Left edge",
       right: "Right edge",
       depthName: "Maximum heading depth",
@@ -638,6 +704,7 @@ class FloatingTocSettingTab extends PluginSettingTab {
 
     return [
       {
+        id: "interface-language",
         name: text.languageName,
         desc: text.languageDesc,
         aliases: isChinese ? ["Interface language"] : ["界面语言"],
@@ -648,20 +715,23 @@ class FloatingTocSettingTab extends PluginSettingTab {
         }
       },
       {
+        id: "enabled",
         name: text.enabledName,
         aliases: isChinese ? ["Enable floating TOC"] : ["启用浮动目录"],
         control: { type: "toggle", key: "enabled" }
       },
       {
+        id: "position",
         name: text.positionName,
         aliases: isChinese ? ["Position"] : ["显示位置"],
         control: {
           type: "dropdown",
           key: "side",
-          options: { left: text.left, right: text.right }
+          options: { auto: text.automatic, left: text.left, right: text.right }
         }
       },
       {
+        id: "heading-depth",
         name: text.depthName,
         desc: text.depthDesc,
         aliases: isChinese ? ["Maximum heading depth"] : ["最大标题层级"],
@@ -672,6 +742,7 @@ class FloatingTocSettingTab extends PluginSettingTab {
         }
       },
       {
+        id: "tick-navigation",
         name: text.navigationName,
         desc: text.navigationDesc,
         aliases: isChinese ? ["Tick navigation"] : ["刻度导航方式"],
@@ -685,6 +756,7 @@ class FloatingTocSettingTab extends PluginSettingTab {
         }
       },
       {
+        id: "hover-card-content",
         name: text.previewName,
         desc: text.previewDesc,
         aliases: isChinese ? ["Hover card content"] : ["悬停卡片内容"],
@@ -699,6 +771,7 @@ class FloatingTocSettingTab extends PluginSettingTab {
         }
       },
       {
+        id: "scroll-tracking",
         name: text.trackingName,
         desc: text.trackingDesc,
         aliases: isChinese ? ["Content scroll tracking"] : ["正文滚动同步方式"],
@@ -712,6 +785,7 @@ class FloatingTocSettingTab extends PluginSettingTab {
         }
       },
       {
+        id: "highlight-color",
         name: text.highlightName,
         desc: text.highlightDesc,
         aliases: isChinese ? ["Custom highlight color"] : ["自定义高亮颜色"],
@@ -732,6 +806,7 @@ class FloatingTocSettingTab extends PluginSettingTab {
         }
       },
       {
+        id: "rail-height",
         name: text.heightName,
         desc: text.heightDesc,
         aliases: isChinese ? ["Rail height"] : ["刻度轨道高度"],
@@ -760,7 +835,7 @@ class FloatingTocSettingTab extends PluginSettingTab {
         this.plugin.settings.maxDepth = Number(value);
         break;
       case "side":
-        this.plugin.settings.side = value as "left" | "right";
+        this.plugin.settings.side = value as "auto" | "left" | "right";
         break;
       case "verticalSize":
         this.plugin.settings.verticalSize = Number(value);

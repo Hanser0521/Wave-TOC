@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.9 — 2026-10-10
+
+### 中文
+
+- 适配 Obsidian 1.14：为所有声明式设置项增加稳定标识，设置项在重命名或重新排序后仍可保持稳定引用。
+- 新增“跟随界面方向”显示位置，在 Obsidian 的从右到左界面中自动将轨道放到右侧，同时保留原有左侧默认设置。
+- 悬停卡片使用 Obsidian 1.14 的系统偏好字号变量，移动端和辅助功能大字号下更易阅读。
+- 为 Obsidian 1.14 打开的仓库外 Markdown 文件增加本地标题解析回退，也能显示和使用 Wave TOC。
+- 所有动画和选择监听均绑定到笔记所属窗口，改善弹出窗口与多窗口环境下的兼容性。
+- 构建依赖更新至官方 Obsidian API 1.14.4。
+
+### English
+
+- Added stable IDs to every declarative setting for Obsidian 1.14, preserving references when settings are renamed or reordered.
+- Added a “Follow interface direction” position that automatically places the rail on the right in RTL interfaces while preserving the existing left-side default.
+- Updated hover-card typography to respect Obsidian 1.14's preferred system text size on mobile and with accessibility text scaling.
+- Added a local heading-parser fallback so Markdown files opened from outside the vault in Obsidian 1.14 can also use Wave TOC.
+- Bound animations and selection listeners to each note's owning window for better pop-out and multi-window compatibility.
+- Updated the build dependency to the official Obsidian API 1.14.4.
+
 ## 1.0.8 — 2026-09-29
 
 ### 中文
