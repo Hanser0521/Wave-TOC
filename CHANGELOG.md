@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.10 — 2026-11-12
+
+### 中文
+
+- 新增「跳转到标题」命令和列表按钮，可搜索当前笔记的标题，用键盘或触屏定位，并通过行号区分同名标题。
+- 直接点击或点按刻度即可跳转；编辑模式下悬停只滚动正文，保留光标和选区。
+- 轨道按笔记窗格高度布局，长目录可滚动；到达正文底部时高亮末节。
+- 阅读模式点击使用 Obsidian 的按行定位；悬停预览读取当前视图正文并按需生成。
+- 修正备用解析对 YAML 属性、注释、代码围栏及 Setext 标题的处理。波浪动画遵循系统的减少动态效果设置。
+
+### English
+
+- Added Jump to heading with local search, keyboard and touch support, and line numbers for duplicate titles.
+- Direct clicks and taps jump immediately. Hovering in Editing view scrolls without moving the cursor or clearing the selection.
+- The rail fits the note pane and scrolls for long outlines. Scrolling to the end highlights the last section.
+- Reading view uses Obsidian's line navigation for clicks, and hover previews are generated on demand from the current view.
+- Fixed fallback handling of YAML properties, comments, code fences, and Setext headings. The hover wave respects the system's reduced motion setting.
+
 ## 1.0.9 — 2026-10-10
 
 ### 中文

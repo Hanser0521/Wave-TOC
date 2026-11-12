@@ -5,7 +5,8 @@
 }
 
 .wave-floating-toc {
-  --wave-toc-height: 50vh;
+  --wave-toc-height: 50%;
+  --wave-picker-size: 28px;
   --wave-highlight-color: var(--text-normal);
   position: absolute;
   z-index: var(--layer-popover);
@@ -13,8 +14,8 @@
   left: 15px;
   width: 92px;
   height: var(--wave-toc-height);
-  max-height: calc(100vh - 150px);
-  min-height: 180px;
+  max-height: max(0px, calc(100% - 2 * (var(--wave-picker-size) + 8px)));
+  min-height: min(180px, max(0px, calc(100% - 2 * (var(--wave-picker-size) + 8px))));
   transform: translateY(-50%);
   pointer-events: none;
 }
@@ -30,11 +31,51 @@
   display: flex;
   width: 66px;
   flex-direction: column;
-  justify-content: center;
+  justify-content: safe center;
   gap: var(--wave-tick-gap, 15px);
   padding: 4px 0;
+  direction: ltr;
+  overflow: hidden auto;
+  scrollbar-width: none;
   pointer-events: auto;
   cursor: pointer;
+}
+
+.wave-floating-toc.is-overflowing .wave-floating-toc-rail {
+  overscroll-behavior-y: contain;
+}
+
+.wave-toc-picker-button {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: var(--wave-picker-size);
+  height: var(--wave-picker-size);
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.wave-floating-toc.is-overflowing .wave-toc-picker-button { display: inline-flex; }
+.wave-floating-toc[data-side="right"] .wave-toc-picker-button { left: auto; right: 0; }
+
+.wave-toc-picker-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-inline-start: var(--wave-heading-indent, 0px);
+}
+
+.wave-toc-picker-title { overflow-wrap: anywhere; }
+.wave-toc-picker-meta { flex: none; color: var(--text-muted); font-size: var(--font-ui-small); }
+
+@media (any-pointer: coarse) {
+  .wave-floating-toc { --wave-picker-size: 44px; }
+  .wave-floating-toc .wave-toc-picker-button { display: inline-flex; }
 }
 
 .wave-floating-toc[data-side="right"] .wave-floating-toc-rail {
@@ -55,7 +96,6 @@
   background: color-mix(in srgb, var(--text-normal) 27%, transparent);
   opacity: .86;
   transform-origin: left center;
-  will-change: transform, opacity, background-color;
   transition:
     background-color 160ms ease,
     opacity 100ms linear;
@@ -109,7 +149,8 @@
   position: absolute;
   top: var(--wave-bubble-y);
   left: 72px;
-  max-width: min(360px, 42vw);
+  box-sizing: border-box;
+  max-width: min(360px, 42vw, var(--wave-bubble-room, 42vw));
   padding: 13px 17px;
   border: 1px solid color-mix(in srgb, var(--text-normal) 12%, transparent);
   border-radius: 18px;
@@ -129,7 +170,7 @@
 
 .wave-floating-toc-bubble.has-preview {
   width: min(420px, 48vw);
-  max-width: min(420px, 48vw);
+  max-width: min(420px, 48vw, var(--wave-bubble-room, 48vw));
   padding: 15px 18px 16px;
   border-radius: 20px;
 }
@@ -193,8 +234,8 @@
   }
   .wave-floating-toc[data-side="right"] { right: 7px; left: auto; }
   .wave-floating-toc-rail { width: 48px; }
-  .wave-floating-toc-bubble { left: 54px; max-width: 68vw; }
-  .wave-floating-toc-bubble.has-preview { width: 72vw; max-width: 72vw; }
+  .wave-floating-toc-bubble { left: 54px; max-width: min(68vw, var(--wave-bubble-room, 68vw)); }
+  .wave-floating-toc-bubble.has-preview { width: 72vw; max-width: min(72vw, var(--wave-bubble-room, 72vw)); }
   .wave-floating-toc[data-side="right"] .wave-floating-toc-bubble { right: 54px; left: auto; }
 }
 

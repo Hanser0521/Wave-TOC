@@ -6,7 +6,7 @@ Wave TOC turns the active note's outline into a compact floating navigation rail
 
 Designed for long notes, it stays accurate in both Editing and Reading views and keeps the interaction calm: scrolling changes only the active color, while the smooth wave animation appears on hover.
 
-Requires Obsidian 1.13.0 or later and includes enhanced integration for Obsidian 1.14.
+Requires Obsidian 1.13.0 or later.
 
 ![Wave TOC in action](https://raw.githubusercontent.com/Hanser0521/Wave-TOC/main/assets/wave-toc-demo.gif)
 
@@ -18,7 +18,11 @@ Requires Obsidian 1.13.0 or later and includes enhanced integration for Obsidian
 - Optional hover-card previews: title only, first paragraph, or a locally extracted section summary
 - Current section indicated by color without changing tick length
 - Configurable navigation: follow the pointer or jump only after click
-- Configurable section tracking: follow the scrolling viewport or use the cursor click behavior
+- In Editing view, hovering scrolls the note without moving the cursor or clearing the selection
+- Direct tick clicks and taps work without hovering first
+- Long outlines scroll within the rail, and hovering generates the selected preview on demand
+- In Editing view, choose scroll or cursor tracking. Reading view always follows scrolling
+- Local heading search with hierarchy and line numbers to distinguish duplicate titles
 - Localized settings with Chinese and English interfaces
 - Searchable settings through Obsidian's native settings search
 - Stable Obsidian 1.14 setting identities, so renamed or reordered settings keep reliable search references
@@ -28,6 +32,10 @@ Requires Obsidian 1.13.0 or later and includes enhanced integration for Obsidian
 - Automatic updates when headings change
 - System-preferred text sizing for readable hover cards on mobile and with accessibility scaling
 - Configurable side, automatic RTL-aware placement, heading depth, and rail height
+
+## Jump to a heading
+
+Run **Wave TOC: Jump to heading** from the command palette, or assign it a shortcut in **Settings → Hotkeys**. Type to filter the current note’s headings, then press ↑/↓ and Enter or choose a result directly. On touch screens and when the rail overflows, the list button below the rail opens the same picker.
 
 ## Build
 

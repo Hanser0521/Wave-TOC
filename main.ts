@@ -4,7 +4,9 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
-  SettingDefinitionItem
+  SettingDefinitionItem,
+  SuggestModal,
+  setIcon
 } from "obsidian";
 import { EditorView } from "@codemirror/view";
 
@@ -40,18 +42,17 @@ const DEFAULT_SETTINGS: FloatingTocSettings = {
   uiLanguage: "zh"
 };
 
-interface TocHeading {
-  text: string;
-  level: number;
-  line: number;
-  firstParagraph: string;
-  summary: string;
-}
-
 interface SourceHeading {
   text: string;
   level: number;
   line: number;
+  bodyLine: number;
+}
+
+interface TocHeading extends SourceHeading {
+  nextLine: number;
+  sectionEnd: number;
+  preview?: string;
 }
 
 function cleanHeadingText(text: string): string {
@@ -63,44 +64,107 @@ function cleanHeadingText(text: string): string {
     .trim();
 }
 
+function markdownTextFilter(): (line: string) => string | null {
+  let fence = "";
+  let comment = false;
+  return line => {
+    if (fence) {
+      const closer = line.match(/^ {0,3}(`{3,}|~{3,})[\t ]*$/)?.[1];
+      if (closer && closer[0] === fence[0] && closer.length >= fence.length) fence = "";
+      return null;
+    }
+    if (!comment) {
+      const opener = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      if (opener && (opener[1][0] !== "`" || !opener[2].includes("`"))) {
+        fence = opener[1];
+        return null;
+      }
+    }
+    let visible = "";
+    let start = 0;
+    for (let at = line.indexOf("%%"); at !== -1; at = line.indexOf("%%", start)) {
+      if (!comment) visible += line.slice(start, at);
+      comment = !comment;
+      start = at + 2;
+    }
+    if (!comment) visible += line.slice(start);
+    return visible || (line ? null : "");
+  };
+}
+
+const SETEXT = /^ {0,3}(=+|-+)[\t ]*$/;
+
 function parseSourceHeadings(lines: string[]): SourceHeading[] {
   const headings: SourceHeading[] = [];
-  let fenceMarker = "";
-  let fenceLength = 0;
+  let start = 0;
+  if (/^\uFEFF?---[\t ]*$/.test(lines[0] ?? "")) {
+    const end = lines.findIndex((line, index) => index > 0 && /^(?:---|\.\.\.)[\t ]*$/.test(line));
+    if (end !== -1) start = end + 1;
+  }
+  const filter = markdownTextFilter();
+  let paragraph: string[] = [];
+  let paragraphStart = 0;
 
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-    const line = lines[lineIndex];
-    const fence = line.match(/^ {0,3}(`{3,}|~{3,})/);
-    if (fence) {
-      const marker = fence[1][0];
-      if (!fenceMarker) {
-        fenceMarker = marker;
-        fenceLength = fence[1].length;
-      } else if (marker === fenceMarker && fence[1].length >= fenceLength) {
-        fenceMarker = "";
-        fenceLength = 0;
-      }
+  for (let lineIndex = start; lineIndex < lines.length; lineIndex++) {
+    const line = filter(lines[lineIndex]);
+    if (!line?.trim()) {
+      paragraph = [];
       continue;
     }
-    if (fenceMarker) continue;
-
     const atx = line.match(/^ {0,3}(#{1,6})(?:[\t ]+(.*?)[\t ]*|[\t ]*)$/);
     if (atx) {
       const text = cleanHeadingText((atx[2] ?? "").replace(/[\t ]+#+[\t ]*$/, ""));
-      headings.push({ text, level: atx[1].length, line: lineIndex });
+      if (text) headings.push({ text, level: atx[1].length, line: lineIndex, bodyLine: lineIndex + 1 });
+      paragraph = [];
       continue;
     }
 
-    const nextLine = lines[lineIndex + 1] ?? "";
-    const setext = nextLine.match(/^ {0,3}(=+|-+)[\t ]*$/);
-    const text = cleanHeadingText(line.trim());
-    if (setext && text) {
-      headings.push({ text, level: setext[1][0] === "=" ? 1 : 2, line: lineIndex });
-      lineIndex++;
+    const setext = line.match(SETEXT);
+    if (setext && paragraph.length) {
+      const text = cleanHeadingText(paragraph.join(" "));
+      if (text) headings.push({ text, level: setext[1][0] === "=" ? 1 : 2, line: paragraphStart, bodyLine: lineIndex + 1 });
+      paragraph = [];
+    } else if (setext || /^(?:\t| {4})/.test(line) ||
+      /^ {0,3}(?:>|<|\||(?:[-+*]|\d+[.)])\s|(?:\*\s*){3,}$|(?:_\s*){3,}$|(?:-\s*){3,}$)/.test(line)) {
+      paragraph = [];
+    } else {
+      if (!paragraph.length) paragraphStart = lineIndex;
+      paragraph.push(line.trim());
     }
   }
 
   return headings;
+}
+
+function getNoteOutline(view: MarkdownView, plugin: WaveTocPlugin, source = view.getViewData()): {
+  lines: string[];
+  headings: TocHeading[];
+} {
+  const lines = source.split(/\r?\n/);
+  const cache = view.file && plugin.app.metadataCache.getFileCache(view.file);
+  const sourceHeadings: SourceHeading[] = cache
+    ? (cache.headings ?? []).map(heading => {
+      const { start, end } = heading.position;
+      const bodyLine = end.line === start.line && SETEXT.test(lines[end.line + 1] ?? "") &&
+        !/^ {0,3}#{1,6}(?:\s|$)/.test(lines[start.line] ?? "") ? end.line + 2 : end.line + 1;
+      return { text: cleanHeadingText(heading.heading), level: heading.level, line: start.line, bodyLine };
+    })
+    : parseSourceHeadings(lines);
+  const stack: SourceHeading[] = [];
+  const headings: TocHeading[] = [];
+  for (let index = sourceHeadings.length - 1; index >= 0; index--) {
+    const heading = sourceHeadings[index];
+    while (stack.length && stack[stack.length - 1].level > heading.level) stack.pop();
+    if (heading.text && heading.level <= plugin.settings.maxDepth) {
+      headings.push({
+        ...heading,
+        nextLine: sourceHeadings[index + 1]?.line ?? lines.length,
+        sectionEnd: stack[stack.length - 1]?.line ?? lines.length
+      });
+    }
+    stack.push(heading);
+  }
+  return { lines, headings: headings.reverse() };
 }
 
 function truncatePreview(text: string, maxLength: number): string {
@@ -127,10 +191,11 @@ function cleanPreviewLine(line: string): string {
     .trim();
 }
 
-function extractParagraphs(lines: string[], startLine: number, endLine: number): string[] {
+function extractParagraphs(lines: string[], startLine: number, endLine: number, firstOnly = false): string[] {
   const paragraphs: string[] = [];
   let current: string[] = [];
-  let insideFence = false;
+  let chars = 0;
+  const filter = markdownTextFilter();
   const flush = () => {
     const paragraph = current.join(" ").replace(/\s+/g, " ").trim();
     if (paragraph) paragraphs.push(paragraph);
@@ -138,30 +203,30 @@ function extractParagraphs(lines: string[], startLine: number, endLine: number):
   };
 
   for (let lineIndex = startLine; lineIndex < Math.min(endLine, lines.length); lineIndex++) {
-    const raw = lines[lineIndex].trim();
-    if (/^(```|~~~)/.test(raw)) {
+    const raw = filter(lines[lineIndex])?.trim();
+    if (!raw || /^#{1,6}\s+/.test(raw) || /^(?:=+|-+|\*{3,}|_{3,})$/.test(raw)) {
       flush();
-      insideFence = !insideFence;
-      continue;
-    }
-    if (insideFence) continue;
-    if (!raw || /^#{1,6}\s+/.test(raw) || /^(?:-{3,}|\*{3,}|_{3,})$/.test(raw)) {
-      flush();
+      if (firstOnly && paragraphs.length) break;
       continue;
     }
     if (/^\|.*\|$/.test(raw) || /^\|?[\s:|-]+\|?$/.test(raw)) {
       flush();
+      if (firstOnly && paragraphs.length) break;
       continue;
     }
     const cleaned = cleanPreviewLine(raw);
-    if (cleaned) current.push(cleaned);
+    if (cleaned) {
+      current.push(cleaned.slice(0, 512 - chars));
+      chars += cleaned.length + 1;
+      if (chars >= 512) break;
+    }
   }
   flush();
   return paragraphs;
 }
 
 function createFirstParagraph(lines: string[], startLine: number, endLine: number): string {
-  return truncatePreview(extractParagraphs(lines, startLine, endLine)[0] ?? "", 220);
+  return truncatePreview(extractParagraphs(lines, startLine, endLine, true)[0] ?? "", 220);
 }
 
 function createLocalSummary(lines: string[], startLine: number, endLine: number): string {
@@ -178,10 +243,57 @@ function createLocalSummary(lines: string[], startLine: number, endLine: number)
   return truncatePreview(summary || combined, 280);
 }
 
+function jumpToHeading(view: MarkdownView, heading: SourceHeading, commit: boolean): void {
+  if (view.getMode() === "preview") {
+    // Obsidian's committed line navigation waits for rendering and unfolds the target.
+    if (commit) view.setEphemeralState({ line: heading.line });
+    else view.previewMode.applyScroll(heading.line);
+    return;
+  }
+  const target = { line: heading.line, ch: 0 };
+  if (commit) view.editor.setCursor(target);
+  view.editor.scrollIntoView({ from: target, to: target }, true);
+  if (commit) view.editor.focus();
+}
+
+function searchKey(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+class HeadingPicker extends SuggestModal<TocHeading> {
+  private entries: Array<{ heading: TocHeading; key: string }>;
+
+  constructor(app: App, headings: TocHeading[], zh: boolean, private choose: (heading: TocHeading) => void) {
+    super(app);
+    this.entries = headings.map(heading => ({ heading, key: searchKey(heading.text) }));
+    this.limit = headings.length;
+    this.setPlaceholder(zh ? "搜索标题…" : "Search headings…");
+    this.inputEl.setAttribute("aria-label", zh ? "搜索标题" : "Search headings");
+    this.emptyStateText = zh ? "没有匹配的标题" : "No matching headings";
+  }
+
+  getSuggestions(query: string): TocHeading[] {
+    const words = searchKey(query).trim().split(/\s+/);
+    return this.entries.filter(entry => words.every(word => entry.key.includes(word))).map(entry => entry.heading);
+  }
+
+  renderSuggestion(heading: TocHeading, el: HTMLElement): void {
+    const row = el.createDiv({ cls: "wave-toc-picker-row" });
+    row.style.setProperty("--wave-heading-indent", `${(heading.level - 1) * 13}px`);
+    row.createSpan({ cls: "wave-toc-picker-title", text: heading.text });
+    row.createSpan({ cls: "wave-toc-picker-meta", text: `H${heading.level} · ${heading.line + 1}` });
+  }
+
+  onChooseSuggestion(heading: TocHeading): void {
+    this.choose(heading);
+  }
+}
+
 export default class WaveTocPlugin extends Plugin {
   settings: FloatingTocSettings = DEFAULT_SETTINGS;
   private overlays = new Map<MarkdownView, FloatingToc>();
   private refreshTimer = 0;
+  private headingPicker: HeadingPicker | null = null;
 
   async onload(): Promise<void> {
     const storedSettings = (await this.loadData()) as Partial<FloatingTocSettings> | null;
@@ -196,6 +308,16 @@ export default class WaveTocPlugin extends Plugin {
         await this.saveSettings();
       }
     });
+    this.addCommand({
+      id: "jump-to-heading",
+      name: this.settings.uiLanguage === "zh" ? "跳转到标题" : "Jump to heading",
+      checkCallback: checking => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return false;
+        if (!checking) this.openHeadingPicker(view);
+        return true;
+      }
+    });
     this.addSettingTab(new FloatingTocSettingTab(this.app, this));
 
     this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleRefresh()));
@@ -205,13 +327,17 @@ export default class WaveTocPlugin extends Plugin {
       if (info instanceof MarkdownView && !info.file) this.scheduleRefresh();
     }));
     this.registerEvent(this.app.metadataCache.on("changed", file => {
-      if (file === this.app.workspace.getActiveFile()) this.scheduleRefresh();
+      if (Array.from(this.overlays.keys()).some(view => view.file === file)) this.scheduleRefresh();
+    }));
+    this.registerEvent(this.app.vault.on("modify", file => {
+      if (Array.from(this.overlays.keys()).some(view => view.file === file)) this.scheduleRefresh();
     }));
     this.app.workspace.onLayoutReady(() => this.refreshAll());
   }
 
   onunload(): void {
     window.clearTimeout(this.refreshTimer);
+    this.headingPicker?.close();
     this.overlays.forEach(overlay => overlay.destroy());
     this.overlays.clear();
   }
@@ -247,6 +373,17 @@ export default class WaveTocPlugin extends Plugin {
     await this.saveData(this.settings);
     this.refreshAll();
   }
+
+  openHeadingPicker(view: MarkdownView): void {
+    const source = view.getViewData();
+    const file = view.file;
+    const { headings } = getNoteOutline(view, this, source);
+    this.headingPicker?.close();
+    this.headingPicker = new HeadingPicker(this.app, headings, this.settings.uiLanguage === "zh", heading => {
+      if (view.file === file && view.getViewData() === source) jumpToHeading(view, heading, true);
+    });
+    this.headingPicker.open();
+  }
 }
 
 class FloatingToc {
@@ -257,6 +394,13 @@ class FloatingToc {
   private bubblePreviewEl: HTMLElement | null = null;
   private tickEls: HTMLElement[] = [];
   private headings: TocHeading[] = [];
+  private sourceLines: string[] = [];
+  private source: string | null = null;
+  private renderedSettings = "";
+  private renderedFile: MarkdownView["file"] | undefined;
+  private renderedCache: ReturnType<App["metadataCache"]["getFileCache"]> | undefined;
+  private renderedWindow: Window | null = null;
+  private layoutFrame = 0;
   private activeIndex = -1;
   private hoverIndex = -1;
   private frame = 0;
@@ -267,6 +411,7 @@ class FloatingToc {
   private waveTarget = 0;
   private waveActive = false;
   private waveLastTime = 0;
+  private waveTicks = new Set<number>();
   private pointerDownY: number | null = null;
   private suppressClick = false;
   private cleanup: Array<() => void> = [];
@@ -274,59 +419,50 @@ class FloatingToc {
   constructor(private plugin: WaveTocPlugin, private view: MarkdownView) {}
 
   refresh(): void {
+    const host = this.view.contentEl;
+    const source = this.plugin.settings.enabled ? this.view.getViewData() : null;
+    const settings = JSON.stringify(this.plugin.settings);
+    const file = this.view.file;
+    const cache = file ? this.plugin.app.metadataCache.getFileCache(file) : null;
+    const hostWindow = host.win;
+    const hostDirection = hostWindow.getComputedStyle(host).direction;
+    const layoutKey = `${settings}/${hostDirection}/${this.view.getMode()}`;
+    if (this.source === source && this.renderedSettings === layoutKey && this.renderedFile === file &&
+      this.renderedCache === cache && this.renderedWindow === hostWindow) return;
     this.destroyDom();
-    if (!this.plugin.settings.enabled) return;
-
-    const sourceLines = this.view.editor.getValue().split(/\r?\n/);
-    const cachedHeadings = this.view.file
-      ? this.plugin.app.metadataCache.getFileCache(this.view.file)?.headings ?? []
-      : [];
-    const sourceHeadings: SourceHeading[] = cachedHeadings.length
-      ? cachedHeadings.map(heading => ({
-        text: cleanHeadingText(heading.heading),
-        level: heading.level,
-        line: heading.position.start.line
-      }))
-      : parseSourceHeadings(sourceLines);
-    this.headings = sourceHeadings
-      .map((heading, headingIndex) => {
-        const startLine = heading.line + 1;
-        const nextHeadingLine = sourceHeadings[headingIndex + 1]?.line ?? sourceLines.length;
-        const nextPeerIndex = sourceHeadings.findIndex((candidate, candidateIndex) =>
-          candidateIndex > headingIndex && candidate.level <= heading.level
-        );
-        const sectionEndLine = nextPeerIndex >= 0
-          ? sourceHeadings[nextPeerIndex].line
-          : sourceLines.length;
-        return {
-          text: heading.text,
-          level: heading.level,
-          line: heading.line,
-          firstParagraph: createFirstParagraph(sourceLines, startLine, nextHeadingLine),
-          summary: createLocalSummary(sourceLines, startLine, sectionEndLine)
-        };
-      })
-      .filter(heading => heading.level <= this.plugin.settings.maxDepth);
+    this.source = source;
+    this.renderedSettings = layoutKey;
+    this.renderedFile = file;
+    this.renderedCache = cache;
+    this.renderedWindow = hostWindow;
+    if (source === null) return;
+    const { lines, headings } = getNoteOutline(this.view, this.plugin, source);
+    this.sourceLines = lines;
+    this.headings = headings;
     if (!this.headings.length) return;
 
-    const host = this.view.contentEl;
-    const hostWindow = host.win;
     const hostDocument = host.doc;
     host.addClass("has-wave-floating-toc");
 
     this.rootEl = host.createDiv({ cls: "wave-floating-toc" });
-    const hostDirection = hostWindow.getComputedStyle(host).direction;
     this.rootEl.dataset.side = this.plugin.settings.side === "auto"
       ? hostDirection === "rtl" ? "right" : "left"
       : this.plugin.settings.side;
-    this.rootEl.style.setProperty("--wave-toc-height", `${this.plugin.settings.verticalSize}vh`);
+    this.rootEl.style.setProperty("--wave-toc-height", `${this.plugin.settings.verticalSize}%`);
     this.rootEl.style.setProperty(
       "--wave-highlight-color",
       this.plugin.settings.useCustomHighlightColor
         ? this.plugin.settings.highlightColor
         : "var(--text-normal)"
     );
-    this.railEl = this.rootEl.createDiv({ cls: "wave-floating-toc-rail" });
+    const rail = this.railEl = this.rootEl.createDiv({ cls: "wave-floating-toc-rail" });
+    const label = this.plugin.settings.uiLanguage === "zh" ? "跳转到标题" : "Jump to heading";
+    const launcher = this.rootEl.createEl("button", {
+      cls: "wave-toc-picker-button",
+      attr: { type: "button", "aria-label": label, title: label }
+    });
+    setIcon(launcher, "list");
+    launcher.addEventListener("click", () => this.plugin.openHeadingPicker(this.view));
     this.bubbleEl = this.rootEl.createDiv({ cls: "wave-floating-toc-bubble" });
     this.bubbleTitleEl = this.bubbleEl.createDiv({ cls: "wave-floating-toc-bubble-title" });
     this.bubblePreviewEl = this.bubbleEl.createDiv({ cls: "wave-floating-toc-bubble-preview" });
@@ -335,46 +471,57 @@ class FloatingToc {
       const tick = this.railEl!.createDiv({ cls: "wave-floating-toc-tick" });
       tick.dataset.index = String(index);
       tick.dataset.level = String(heading.level);
-      tick.setAttribute("aria-label", heading.text);
+      tick.setAttribute("aria-hidden", "true");
       this.tickEls.push(tick);
     });
-    this.railEl.style.setProperty("--wave-heading-count", String(this.headings.length));
-    hostWindow.requestAnimationFrame(() => {
-      if (!this.railEl) return;
-      const available = Math.max(0, this.railEl.clientHeight - 8);
+    const updateLayout = () => {
+      const available = Math.max(0, rail.clientHeight - 8);
       const count = this.headings.length;
       const gap = count > 1
         ? Math.min(15, Math.max(5, (available - count * 3) / (count - 1)))
         : 15;
-      this.railEl.style.setProperty("--wave-tick-gap", `${gap}px`);
+      rail.style.setProperty("--wave-tick-gap", `${gap}px`);
+      this.rootEl?.toggleClass("is-overflowing", count * 3 + Math.max(0, count - 1) * 5 > available);
+      this.rootEl?.style.setProperty("--wave-bubble-room", `${Math.max(0, host.clientWidth - 99)}px`);
+      this.revealActiveTick();
+    };
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(host);
+    this.layoutFrame = hostWindow.requestAnimationFrame(() => {
+      this.layoutFrame = 0;
+      updateLayout();
+      this.updateActive();
     });
 
-    const onMove = (event: MouseEvent) => this.handlePointerMove(event);
-    const onDown = (event: MouseEvent) => {
+    const onMove = (event: PointerEvent) => {
+      if (event.pointerType === "mouse") this.handlePointerMove(event);
+    };
+    const onDown = (event: PointerEvent) => {
       this.pointerDownY = event.clientY;
       this.suppressClick = false;
     };
-    const onLeave = () => this.clearHover();
+    const onLeave = () => {
+      this.pointerDownY = null;
+      this.clearHover();
+    };
     const onClick = (event: MouseEvent) => this.handleClick(event);
     const onScroll = () => this.scheduleActiveUpdate();
 
-    this.rootEl.addEventListener("mousemove", onMove);
-    this.rootEl.addEventListener("mousedown", onDown);
-    this.rootEl.addEventListener("mouseleave", onLeave);
-    this.rootEl.addEventListener("click", onClick);
+    rail.addEventListener("pointermove", onMove);
+    rail.addEventListener("pointerdown", onDown);
+    rail.addEventListener("pointerleave", onLeave);
+    rail.addEventListener("pointercancel", onLeave);
+    rail.addEventListener("click", onClick);
+    rail.addEventListener("scroll", () => this.clearHover(), { passive: true });
     host.addEventListener("scroll", onScroll, { capture: true, passive: true });
     host.addEventListener("wheel", onScroll, { passive: true });
     hostDocument.addEventListener("selectionchange", onScroll, { passive: true });
     this.cleanup.push(
-      () => this.rootEl?.removeEventListener("mousemove", onMove),
-      () => this.rootEl?.removeEventListener("mousedown", onDown),
-      () => this.rootEl?.removeEventListener("mouseleave", onLeave),
-      () => this.rootEl?.removeEventListener("click", onClick),
+      () => observer.disconnect(),
       () => host.removeEventListener("scroll", onScroll, { capture: true }),
       () => host.removeEventListener("wheel", onScroll),
       () => hostDocument.removeEventListener("selectionchange", onScroll)
     );
-    hostWindow.requestAnimationFrame(() => this.updateActive());
   }
 
   destroy(): void {
@@ -382,11 +529,13 @@ class FloatingToc {
   }
 
   private destroyDom(): void {
-    const hostWindow = this.view.contentEl.win;
+    const hostWindow = this.renderedWindow ?? this.view.contentEl.win;
     if (this.frame) hostWindow.cancelAnimationFrame(this.frame);
     if (this.waveFrame) hostWindow.cancelAnimationFrame(this.waveFrame);
+    if (this.layoutFrame) hostWindow.cancelAnimationFrame(this.layoutFrame);
     this.frame = 0;
     this.waveFrame = 0;
+    this.layoutFrame = 0;
     this.cleanup.forEach(fn => fn());
     this.cleanup = [];
     this.rootEl?.parentElement?.removeClass("has-wave-floating-toc");
@@ -397,12 +546,17 @@ class FloatingToc {
     this.bubbleTitleEl = null;
     this.bubblePreviewEl = null;
     this.tickEls = [];
+    this.headings = [];
+    this.sourceLines = [];
     this.activeIndex = -1;
     this.hoverIndex = -1;
     this.waveVelocity = 0;
     this.waveAmplitude = 0;
     this.waveActive = false;
     this.waveLastTime = 0;
+    this.waveTicks.clear();
+    this.pointerDownY = null;
+    this.suppressClick = false;
   }
 
   private handlePointerMove(event: MouseEvent): void {
@@ -410,17 +564,10 @@ class FloatingToc {
     if (this.pointerDownY !== null && Math.abs(event.clientY - this.pointerDownY) > 4) {
       this.suppressClick = true;
     }
-    let index = 0;
-    let nearestDistance = Number.POSITIVE_INFINITY;
-    this.tickEls.forEach((tick, tickIndex) => {
-      const rect = tick.getBoundingClientRect();
-      const distance = Math.abs(event.clientY - (rect.top + rect.height / 2));
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        index = tickIndex;
-      }
-    });
+    const index = this.tickAt(event.clientY);
+    if (index < 0) return;
     if (index === this.hoverIndex) return;
+    this.tickEls[this.hoverIndex]?.removeClass("is-hovered");
     this.hoverIndex = index;
     this.renderHover(index);
     if (this.plugin.settings.navigationMode === "hover") {
@@ -428,26 +575,40 @@ class FloatingToc {
     }
   }
 
+  private tickAt(clientY: number): number {
+    const first = this.tickEls[0]?.getBoundingClientRect();
+    if (!first) return -1;
+    const second = this.tickEls[1]?.getBoundingClientRect();
+    if (!second || second.top === first.top) return 0;
+    const rect = this.railEl?.getBoundingClientRect();
+    const y = rect ? Math.min(rect.bottom - 1, Math.max(rect.top, clientY)) : clientY;
+    return Math.max(0, Math.min(this.tickEls.length - 1,
+      Math.round((y - first.top - first.height / 2) / (second.top - first.top))));
+  }
+
   private renderHover(index: number): void {
     if (!this.bubbleEl || !this.bubbleTitleEl || !this.bubblePreviewEl || !this.railEl) return;
     this.rootEl?.addClass("is-hovering");
-    this.tickEls.forEach((tick, tickIndex) => tick.toggleClass("is-hovered", tickIndex === index));
     const tick = this.tickEls[index];
     const heading = this.headings[index];
     if (!tick || !heading) return;
+    tick.addClass("is-hovered");
 
     const previewMode = this.plugin.settings.bubblePreviewMode;
-    const preview = previewMode === "paragraph"
-      ? heading.firstParagraph
-      : previewMode === "summary" ? heading.summary : "";
+    const preview = heading.preview ??= previewMode === "paragraph"
+      ? createFirstParagraph(this.sourceLines, heading.bodyLine, heading.nextLine)
+      : previewMode === "summary" ? createLocalSummary(this.sourceLines, heading.bodyLine, heading.sectionEnd) : "";
     this.bubbleTitleEl.setText(heading.text);
     this.bubblePreviewEl.setText(preview);
     this.bubbleEl.toggleClass("has-preview", Boolean(preview));
     this.bubblePreviewEl.toggleClass("is-hidden", !preview);
     this.bubbleEl.addClass("is-visible");
-    const railRect = this.railEl.getBoundingClientRect();
+    const rootRect = this.rootEl!.getBoundingClientRect();
+    const pane = this.view.contentEl.getBoundingClientRect();
     const tickRect = tick.getBoundingClientRect();
-    this.bubbleEl.style.setProperty("--wave-bubble-y", `${tickRect.top - railRect.top + tickRect.height / 2}px`);
+    const inset = Math.min(this.bubbleEl.offsetHeight / 2 + 4, pane.height / 2);
+    const y = Math.min(pane.bottom - inset, Math.max(pane.top + inset, tickRect.top + tickRect.height / 2));
+    this.bubbleEl.style.setProperty("--wave-bubble-y", `${y - rootRect.top}px`);
     this.setWaveTarget(index);
   }
 
@@ -457,10 +618,11 @@ class FloatingToc {
     this.rootEl?.removeClass("is-hovering");
     this.bubbleEl?.removeClass("is-visible");
     this.waveActive = false;
-    this.ensureWaveAnimation();
+    if (this.waveAmplitude || this.waveFrame) this.ensureWaveAnimation();
   }
 
   private setWaveTarget(index: number): void {
+    if (this.view.contentEl.win.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     if (this.waveAmplitude < 0.01) {
       this.wavePosition = index;
       this.waveVelocity = 0;
@@ -491,7 +653,11 @@ class FloatingToc {
         this.wavePosition += this.waveVelocity * frameScale;
       }
 
-      this.tickEls.forEach((tick, index) => {
+      const nextTicks = new Set<number>();
+      for (let index = Math.max(0, Math.floor(this.wavePosition) - 6);
+        index <= Math.min(this.tickEls.length - 1, Math.ceil(this.wavePosition) + 6); index++) {
+        const tick = this.tickEls[index];
+        nextTicks.add(index);
         const level = this.headings[index]?.level ?? 3;
         const baseWidth = level === 1 ? 27 : level === 2 ? 20 : 15;
         const distance = index - this.wavePosition;
@@ -505,7 +671,11 @@ class FloatingToc {
           "--wave-highlight-strength",
           `${(27 + 73 * strength).toFixed(1)}%`
         );
-      });
+      }
+      for (const index of this.waveTicks) {
+        if (!nextTicks.has(index)) this.clearWaveTick(index);
+      }
+      this.waveTicks = nextTicks;
 
       const resting = this.waveActive &&
         Math.abs(1 - this.waveAmplitude) < 0.004 &&
@@ -524,12 +694,8 @@ class FloatingToc {
         this.waveAmplitude = 0;
         this.waveVelocity = 0;
         this.waveLastTime = 0;
-        this.tickEls.forEach(tick => {
-          tick.style.removeProperty("transform");
-          tick.style.removeProperty("opacity");
-          tick.style.removeProperty("--wave-highlight-strength");
-          tick.removeClass("is-wave-colored");
-        });
+        this.waveTicks.forEach(index => this.clearWaveTick(index));
+        this.waveTicks.clear();
         this.rootEl?.removeClass("is-wave-active");
         this.waveFrame = 0;
         return;
@@ -537,6 +703,15 @@ class FloatingToc {
       this.waveFrame = this.view.contentEl.win.requestAnimationFrame(animate);
     };
     this.waveFrame = this.view.contentEl.win.requestAnimationFrame(animate);
+  }
+
+  private clearWaveTick(index: number): void {
+    const tick = this.tickEls[index];
+    if (!tick) return;
+    tick.style.removeProperty("transform");
+    tick.style.removeProperty("opacity");
+    tick.style.removeProperty("--wave-highlight-strength");
+    tick.removeClass("is-wave-colored");
   }
 
   private handleClick(event: MouseEvent): void {
@@ -547,25 +722,15 @@ class FloatingToc {
       this.suppressClick = false;
       return;
     }
-    if (this.hoverIndex >= 0) this.navigateTo(this.hoverIndex, true);
+    const index = this.tickAt(event.clientY);
+    if (index >= 0) this.navigateTo(index, true);
   }
 
   private navigateTo(index: number, commit: boolean): void {
     const heading = this.headings[index];
     if (!heading) return;
 
-    if (this.view.getMode() === "preview") {
-      // Reading mode virtualizes long notes. Source-line navigation renders the
-      // correct section on demand and remains unambiguous for duplicate titles.
-      this.view.previewMode.applyScroll(heading.line);
-    } else {
-      this.view.editor.setCursor({ line: heading.line, ch: 0 });
-      this.view.editor.scrollIntoView({
-        from: { line: heading.line, ch: 0 },
-        to: { line: heading.line, ch: 0 }
-      }, true);
-      if (commit) this.view.editor.focus();
-    }
+    jumpToHeading(this.view, heading, commit);
     this.setActive(index);
   }
 
@@ -579,21 +744,28 @@ class FloatingToc {
 
   private updateActive(): void {
     if (!this.headings.length) return;
-    let index = 0;
-    if (this.view.getMode() === "preview") {
-      const line = this.view.previewMode.getScroll();
-      this.headings.forEach((heading, headingIndex) => {
-        if (heading.line <= line) index = headingIndex;
-      });
-    } else {
-      const line = this.plugin.settings.activeTrackingMode === "viewport"
+    const reading = this.view.getMode() === "preview";
+    const cursorTracking = !reading && this.plugin.settings.activeTrackingMode === "cursor";
+    const scroller = cursorTracking ? null : this.view.contentEl.querySelector<HTMLElement>(
+      reading ? ".markdown-preview-view" : ".cm-scroller"
+    );
+    if (scroller && scroller.scrollHeight > scroller.clientHeight + 2 &&
+      scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 2) {
+      this.setActive(this.headings.length - 1);
+      return;
+    }
+    const line = reading ? this.view.previewMode.getScroll()
+      : !cursorTracking
         ? this.getEditorViewportLine()
         : this.view.editor.getCursor("from").line;
-      this.headings.forEach((heading, headingIndex) => {
-        if (heading.line <= line) index = headingIndex;
-      });
+    let lo = 0;
+    let hi = this.headings.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (this.headings[mid].line <= line) lo = mid + 1;
+      else hi = mid;
     }
-    this.setActive(Math.min(index, this.headings.length - 1));
+    this.setActive(Math.max(0, lo - 1));
   }
 
   private getEditorViewportLine(): number {
@@ -617,14 +789,34 @@ class FloatingToc {
 
   private setActive(index: number): void {
     if (index === this.activeIndex) return;
-    this.tickEls[this.activeIndex]?.removeClass("is-active");
+    const previous = this.activeIndex;
+    this.tickEls[previous]?.removeClass("is-active");
     this.activeIndex = index;
     this.tickEls[index]?.addClass("is-active");
-    this.updateActiveGradient(index);
+    this.updateActiveGradient(index, previous);
+    this.revealActiveTick();
   }
 
-  private updateActiveGradient(activeIndex: number): void {
-    this.tickEls.forEach((tick, index) => {
+  private revealActiveTick(): void {
+    const rail = this.railEl;
+    const tick = this.tickEls[this.activeIndex];
+    if (!rail || !tick || this.hoverIndex >= 0 || rail.scrollHeight <= rail.clientHeight) return;
+    const bounds = rail.getBoundingClientRect();
+    const target = tick.getBoundingClientRect();
+    if (target.top < bounds.top) rail.scrollTop += target.top - bounds.top - 4;
+    else if (target.bottom > bounds.bottom) rail.scrollTop += target.bottom - bounds.bottom + 4;
+  }
+
+  private updateActiveGradient(activeIndex: number, previous: number): void {
+    const indices = new Set<number>();
+    for (const center of [activeIndex, previous]) {
+      if (center < 0) continue;
+      for (let index = Math.max(0, center - 3); index <= Math.min(this.tickEls.length - 1, center + 3); index++) {
+        indices.add(index);
+      }
+    }
+    for (const index of indices) {
+      const tick = this.tickEls[index];
       const distance = Math.abs(index - activeIndex);
       const influence = Math.exp(-(distance * distance) / (2 * 1.35 * 1.35));
       const showGradient = distance > 0 && influence > 0.06;
@@ -637,7 +829,7 @@ class FloatingToc {
       } else {
         tick.style.removeProperty("--wave-active-strength");
       }
-    });
+    }
   }
 }
 
@@ -666,13 +858,13 @@ class FloatingTocSettingTab extends PluginSettingTab {
       previewParagraph: "标题 + 第一段正文",
       previewSummary: "标题 + 内容摘要（默认）",
       trackingName: "正文滚动同步方式",
-      trackingDesc: "选择滚动正文时刻度自动跟随，或保留点击正文后才更新刻度的旧版方式。",
+      trackingDesc: "编辑模式下，可随正文滚动或光标位置更新刻度。阅读模式始终跟随正文滚动。",
       trackingViewport: "正文滚动时自动跟随（默认）",
       trackingCursor: "光标点击后跟随",
       highlightName: "自定义高亮颜色",
       highlightDesc: "关闭时保持当前主题颜色；开启后使用右侧颜色，并在高亮刻度两侧显示渐变。",
       heightName: "刻度轨道高度",
-      heightDesc: "设置刻度轨道占窗口高度的百分比。"
+      heightDesc: "设置刻度轨道占笔记窗格高度的百分比。"
     } : {
       languageName: "Interface language",
       languageDesc: "Choose the language used in the Wave TOC settings.",
@@ -693,13 +885,13 @@ class FloatingTocSettingTab extends PluginSettingTab {
       previewParagraph: "Title + first paragraph",
       previewSummary: "Title + content summary (default)",
       trackingName: "Content scroll tracking",
-      trackingDesc: "Choose automatic viewport tracking while scrolling or the legacy cursor/click behavior.",
+      trackingDesc: "In Editing view, track scrolling or the cursor. Reading view always tracks scrolling.",
       trackingViewport: "Follow while scrolling (default)",
       trackingCursor: "Follow after cursor click",
       highlightName: "Custom highlight color",
       highlightDesc: "Keep the current theme color when disabled, or use the selected color with a gradient across neighboring ticks.",
       heightName: "Rail height",
-      heightDesc: "Set the rail height as a percentage of the window."
+      heightDesc: "Set the rail height as a percentage of the note pane."
     };
 
     return [
